@@ -12,6 +12,10 @@
 // @require           https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js
 // @match             *://*/*
 // @match             https://*.web-sandbox.oaiusercontent.com/*
+// @exclude           https://accounts.google.com/*
+// @exclude           https://accounts.youtube.com/*
+// @exclude           https://ogs.google.com/*
+// @exclude           https://accountchooser.google.com/*
 // @run-at            document-idle
 // @icon              data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADwAAAA8CAYAAAA6/NlyAAAABHNCSVQICAgIfAhkiAAABBdJREFUaIHtmluIVlUUx39pMup4Q1FrRi1CrMAaREUS75KlBhKKSGAKzkPRQ0lBPngjkIZeBMWHAccH8VIKJQTSIAgWVBQKglco7YYiitrYjONtjg/7G2bPPmt/nvOdtc8ndn5wQM/+77X+i73PnrPP/qCgoKCg4P/Bi8CGAHFfAj4JEDcTc4GodM1Ujt1aintcOW4mTtFT8GnFuAusuBGwSjF2xdQCdwlj7LwTt1kpbiYGAh30NtauEHe1EzMCtivEVeEEcXObM8bsFGIuyxhTjY3EzUXA4ArjNQmxHmSIp86zwH3iJvdWEGuoECcC9qs4VWQ3stGXU8b52hNnoppTJcYjG/05RYxJnhiHVZ0qcgjZ8OKE/X/x9J+t7lQJ3wj9lqDvUk/fNDOkKhxDNv5+mT5PAb97+r0d0qwG9nu1fV3DvKRIrPX0+SOwVzVOIxfQJGgHA20e/eocvKrwFnIBETDa0W716P7Ny6wWl5AL+cLS1Hs0EfBpnmY1eId4EfeBkZbmsKCJgHu5OlXkBr0Lsb+ITME/uo352tTjA3qKuATUWG1nkYv9M2ePqvSjZwV+17q/HP/ozsvZozpbgAvOvevIxR7N11oYRgLTrP+vxz+6r+TuLjBDkffNEdBSRV/B2IVcbCe9/1w9ETTgn8obq+grGEeQi70MPF1FX0FYiH90V5Y09Zht4hPBGeRi7VOKc8CM/K3pswb/6L7maB6r86NK6APcIl7oAWB6SdMPuGK1rcjfpg79MdNUGlmbz4X2N0OZ0lgkhmCOSF8FxgF1mDPdCR79JuCz0r/7Yz791Aq6m5gp/jdm43EO+J4qbi4WAD/ifz6lqwMY4MRpThnjH2Ad5lHIhT7Alx4zt/FvDHwvGGMw50aSvgv5UK278IYA9cU4KCQ/CyzBTOfhwPOY00Nb04aZ/hLuKF8HFgEvAGMxq/leIe8N4t/IVJkjJD3k0W5zdJvLxB2H+axj6/sKusVC/j3pSkjHN06yyx5dnaO7hdkplWMnyQr50NHdIdAo12CeGzvZex7tt44uyRfIsZhn1u5X79G6W8zXE1WQkjriC4hkaKqjuYZZ6JLgjnKrR/edo/soYfxUPEd8BKRpetzRrE2R4xmnb0TP66fNV47m4xQ5EjMC8zJgJ5ruaJY47TcryNPixDgmaH51NOUO6ipmIPHThIOOxv2ZUZrR7WY48VF+w2qvFdqDvYoeFZLNKrU1Ovc7MuRxPwWdsNpanbYuzIIXhFXEC76D2d795dzPspAME/I0In8T+yFDnkdS7uDavm4r5NqRII873YMwHv/7bfc1VynX1UfkCfHrXZFBwD7BQAfmtxpajAJOCnkuAPMrCZh1P1wDTMZsCv4DfsLsfLSZiNlItGOKvRggR0FBQcHjx0Ng/VhKUt8K3AAAAABJRU5ErkJggg==
 // @compatible        chrome
@@ -20,7 +24,7 @@
 // @compatible        opera
 // @compatible        safari
 // @compatible        brave
-// @version           4.1.0
+// @version           4.2.0
 // @downloadURL       https://update.greasyfork.org/scripts/530139/Universal%20Markdown%20Exporter.user.js
 // @updateURL         https://update.greasyfork.org/scripts/530139/Universal%20Markdown%20Exporter.meta.js
 // ==/UserScript==
@@ -192,7 +196,7 @@
     // =====================================================================
     // PREFERENCES
     // =====================================================================
-    function gP() { return { cs: _get('h2m_citationStyle', 'parenthesized'), fm: _get('h2m_frontmatter', true), t1: _get('h2m_titleH1', false), incCite: _get('h2m_incCitations', true), incScan: _get('h2m_incScanned', false), incAct: _get('h2m_incActivity', false) }; }
+    function gP() { return { cs: _get('h2m_citationStyle', 'parenthesized'), fm: _get('h2m_frontmatter', true), t1: _get('h2m_titleH1', false), incCite: _get('h2m_incCitations', true), incScan: _get('h2m_incScanned', false), incAct: _get('h2m_incActivity', false), wrap: _get('h2m_wrapText', true) }; }
 
     // =====================================================================
     // STYLES
@@ -203,8 +207,8 @@
 .h2m-tip{position:fixed;top:20%;right:12px;background:rgba(22,22,26,.96);color:#e0e0e4;border:1px solid #555;padding:14px 16px;z-index:2147483647;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.45);font:13px/1.5 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;max-width:340px;white-space:pre-wrap;pointer-events:none}
 .h2m-tip b,.h2m-tip strong{color:#78c6f0}
 .h2m-toast{position:fixed;bottom:20px;right:20px;background:#0e639c;color:#fff;padding:10px 18px;border-radius:8px;z-index:2147483647;font:13px system-ui,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.35);transition:opacity .3s;pointer-events:none}
-.h2m-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:12px}
-.h2m-modal{width:min(1060px,96vw);height:min(780px,90vh);background:#1e1e1e;border-radius:12px;overflow:hidden;display:grid;grid-template-rows:auto 1fr;box-shadow:0 24px 80px rgba(0,0,0,.5);font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:#d4d4d4}
+.h2m-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2147483000;display:flex;align-items:safe center;justify-content:safe center;padding:min(12px,2vw);overflow:auto;box-sizing:border-box}
+.h2m-modal{width:min(1060px,calc(100vw - 24px));max-width:100%;min-width:0;height:min(780px,calc(100vh - 24px));max-height:100%;background:#1e1e1e;border-radius:12px;overflow:hidden;display:grid;grid-template-rows:auto 1fr;box-shadow:0 24px 80px rgba(0,0,0,.5);font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:#d4d4d4;box-sizing:border-box}
 .h2m-toolbar{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:#2d2d2d;border-bottom:1px solid #3a3a3a;gap:6px;flex-wrap:wrap}
 .h2m-toolbar-left,.h2m-toolbar-right{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .h2m-btn{padding:5px 12px;border:1px solid #555;border-radius:6px;background:#3c3c3c;color:#d4d4d4;font-size:12px;cursor:pointer;transition:all .15s;white-space:nowrap;font-family:inherit}
@@ -219,9 +223,11 @@
 .h2m-btn-obsidian:hover{background:#8b5cf6}
 .h2m-select{padding:4px 8px;border:1px solid #555;border-radius:6px;background:#3c3c3c;color:#d4d4d4;font-size:12px;cursor:pointer;font-family:inherit}
 .h2m-lbl{font-size:11px;color:#999;margin-right:2px}
-.h2m-body{display:flex;flex:1;min-height:0}
-.h2m-body textarea{width:50%;height:100%;padding:16px;box-sizing:border-box;overflow-y:auto;background:#1e1e1e;color:#d4d4d4;border:none;border-right:1px solid #333;font:13px/1.6 'Cascadia Code','Fira Code',Consolas,monospace;resize:none;outline:none}
-.h2m-preview{width:50%;height:100%;padding:16px 20px;box-sizing:border-box;overflow-y:auto;background:#252526;color:#d4d4d4;font:14px/1.7 system-ui,sans-serif}
+.h2m-body{display:flex;flex:1;min-height:0;min-width:0;overflow:hidden}
+.h2m-body textarea{width:50%;min-width:0;height:100%;padding:16px;box-sizing:border-box;overflow-y:auto;overflow-x:auto;background:#1e1e1e;color:#d4d4d4;border:none;border-right:1px solid #333;font:13px/1.6 'Cascadia Code','Fira Code',Consolas,monospace;resize:none;outline:none}
+.h2m-body.h2m-wrap-text textarea,.h2m-body.h2m-wrap-text .h2m-preview{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
+.h2m-body:not(.h2m-wrap-text) textarea{white-space:pre}
+.h2m-preview{width:50%;min-width:0;height:100%;padding:16px 20px;box-sizing:border-box;overflow-y:auto;overflow-x:auto;background:#252526;color:#d4d4d4;font:14px/1.7 system-ui,sans-serif}
 .h2m-preview h1,.h2m-preview h2,.h2m-preview h3{color:#569cd6;border-bottom:1px solid #333;padding-bottom:4px}
 .h2m-preview a{color:#4ec9b0}.h2m-preview code{background:#333;padding:2px 5px;border-radius:3px;font-size:12px}
 .h2m-preview pre{background:#1e1e1e;padding:12px;border-radius:6px;overflow-x:auto}
@@ -352,7 +358,7 @@
                 md += `${idx}. [${title}](${domainHref})\n`;
                 if (snippet) {
                     const trimmed = snippet.length > 200 ? snippet.substring(0, 200) + '...' : snippet;
-                    md += `   1. ${trimmed}\n`;
+                    md += `   - ${trimmed}\n`;
                 }
                 idx++;
             }
@@ -365,8 +371,9 @@
         if (!sec) return null;
         const dur = extractDRDuration();
         const durText = dur ? (dur.match(/in\s+(\S+)/)?.[1] || '?') : '?';
-        let md = `## **Thinking Activity [Research completed in \`${durText}\`]**\n\n`;
-        const entries = sec.querySelectorAll('.flex.items-stretch.gap-1');
+        let md = `## **Research Activity [Research completed in \`${durText}\`]**\n\n`;
+        let entries = sec.querySelectorAll('.space-y-4.py-1 > .flex.items-stretch.gap-1, .space-y-4 > .flex.items-stretch.gap-1');
+        if (!entries.length) entries = sec.querySelectorAll('.flex.items-stretch.gap-1');
         let idx = 1;
         for (const entry of entries) {
             const flex1 = entry.querySelector('.flex-1');
@@ -484,6 +491,42 @@
         }
         walk(start, 0);
         return best;
+    }
+
+    function isDeepResearchIframeEl(frame) {
+        if (!frame || frame.tagName !== 'IFRAME') return false;
+        const s = frame.getAttribute('src') || '', t = frame.getAttribute('title') || '';
+        return s.includes('web-sandbox.oaiusercontent.com') || s.includes('connector_openai_deep_research') || t.toLowerCase().includes('deep-research');
+    }
+
+    function postMessageToDeepResearchIframes(msg) {
+        for (const f of document.querySelectorAll('iframe')) {
+            if (!isDeepResearchIframeEl(f)) continue;
+            try { if (f.contentWindow) f.contentWindow.postMessage(msg, '*'); } catch (_) {}
+        }
+    }
+
+    function removeOpenH2mModals() {
+        for (const n of document.querySelectorAll('.h2m-overlay')) {
+            try { n.remove(); } catch (_) {}
+        }
+    }
+
+    async function ensureChatGPTDRRightTab(doc, which) {
+        const d = doc || document;
+        const tabs = [...d.querySelectorAll('[role="tab"]')].filter(b => textCompact(b.textContent || '').length < 80);
+        if (tabs.length < 2) return false;
+        const wantSources = which === 'sources';
+        const pick = () => tabs.find(b => {
+            const t = textCompact(b.textContent || '');
+            if (wantSources) return /^sources$/i.test(t) || /^citations\b/i.test(t);
+            return /^activity\b/i.test(t);
+        });
+        const tb = pick();
+        if (!tb) return false;
+        try { tb.click(); } catch (_) {}
+        await sleep(160);
+        return true;
     }
 
     function decodeHtmlEntities(raw) {
@@ -759,8 +802,8 @@
         }
 
         if (!lines.length) return null;
-        let count = sectionCountFromHeader(sec, 'report-references-citations');
-        if (count === '?') count = String(lines.length);
+        const headerCount = sectionCountFromHeader(sec, 'report-references-citations');
+        const count = lines.length ? String(lines.length) : (headerCount !== '?' ? headerCount : '?');
         return '## **Citations [' + mdCode(count) + ' Sources]**\n\n' + lines.join('\n');
     }
 
@@ -775,7 +818,7 @@
         const seen = new Set();
         let idx = 1;
 
-        const btns = sec.querySelectorAll('button[aria-label^="Open scanned source"], button[aria-label^="Open source"]');
+        const btns = sec.querySelectorAll('button[aria-label^="Open scanned source"]');
         for (const btn of btns) {
             const group = btn.closest('.flex.flex-col.gap-4') || btn.closest('section');
             const groupLink = group ? group.querySelector('.flex.items-center.justify-between a[href]') : null;
@@ -798,7 +841,7 @@
             const snippet = textCompact(snippetEl ? snippetEl.textContent : '');
             if (snippet && snippet !== title) {
                 const trimmed = snippet.length > 300 ? snippet.substring(0, 300) + '...' : snippet;
-                lines.push('   1. ' + trimmed);
+                lines.push('   - ' + trimmed);
             }
             idx++;
         }
@@ -822,8 +865,9 @@
         }
 
         const headerId = isConnector ? 'report-references-connector-sources-scanned' : 'report-references-sources-scanned';
-        let count = sectionCountFromHeader(sec, headerId);
-        if (count === '?') count = String(lines.filter(x => /^\d+\./.test(x)).length || lines.length);
+        const headerCount = sectionCountFromHeader(sec, headerId);
+        const primaryCount = lines.filter(x => /^\d+\.\s/.test(x)).length;
+        const count = primaryCount ? String(primaryCount) : (headerCount !== '?' ? headerCount : '?');
         return '## **' + label + ' [' + mdCode(count) + ' Sources]**\n\n' + lines.join('\n');
     }
 
@@ -838,7 +882,8 @@
         const lines = [];
         let idx = 1;
 
-        const entries = sec.querySelectorAll('.text-token-text-secondary.flex.items-stretch.gap-1, .flex.items-stretch.gap-1');
+        let entries = sec.querySelectorAll('.space-y-4.py-1 > .flex.items-stretch.gap-1, .space-y-4 > .flex.items-stretch.gap-1');
+        if (!entries.length) entries = sec.querySelectorAll('.text-token-text-secondary.flex.items-stretch.gap-1, .flex.items-stretch.gap-1');
         for (const entry of entries) {
             const title = textCompact((entry.querySelector('.text-token-text-primary') || {}).textContent || '');
             if (!title) continue;
@@ -905,8 +950,6 @@
         };
         const opts = options || {};
 
-        if (opts.expand !== false) await expandDRMoreControls(d, p);
-
         let sourceDoc = d;
         let report = extractDRReportFromDoc(sourceDoc, p);
         if ((!report || !report.trim()) && opts.allowSrcdocFallback !== false) {
@@ -917,19 +960,37 @@
             }
         }
 
-        if (opts.expand !== false && sourceDoc && sourceDoc !== d) {
-            await expandDRMoreControls(sourceDoc, p);
+        const duration = extractDRDurationFromDoc(sourceDoc);
+        let citations = null;
+        let scanned = null;
+        let connectorScanned = null;
+        let activity = null;
+
+        if (opts.expand !== false && (p.incCitations || p.incScanned)) {
+            await ensureChatGPTDRRightTab(sourceDoc, 'sources');
+            await expandDRMoreControls(sourceDoc, { ...p, incActivity: false });
         }
 
-        const duration = extractDRDurationFromDoc(sourceDoc);
+        if (p.incCitations) citations = extractDRCitationsFromDoc(sourceDoc);
+        if (p.incScanned) {
+            scanned = extractDRScannedFromDoc(sourceDoc, 'scanned');
+            connectorScanned = extractDRScannedFromDoc(sourceDoc, 'connector');
+        }
+
+        if (opts.expand !== false && p.incActivity) {
+            await ensureChatGPTDRRightTab(sourceDoc, 'activity');
+            await expandDRMoreControls(sourceDoc, { incCitations: false, incScanned: false, incActivity: true });
+        }
+        if (p.incActivity) activity = extractDRActivityFromDoc(sourceDoc, duration);
+
         return {
             doc: sourceDoc,
             title: extractDRTitleFromDoc(sourceDoc),
             report: report || '',
-            citations: p.incCitations ? extractDRCitationsFromDoc(sourceDoc) : null,
-            scanned: p.incScanned ? extractDRScannedFromDoc(sourceDoc, 'scanned') : null,
-            connectorScanned: p.incScanned ? extractDRScannedFromDoc(sourceDoc, 'connector') : null,
-            activity: p.incActivity ? extractDRActivityFromDoc(sourceDoc, duration) : null,
+            citations,
+            scanned,
+            connectorScanned,
+            activity,
             duration: duration || null
         };
     }
@@ -971,7 +1032,7 @@
     // =====================================================================
     // GEMINI EXTRACTION
     // =====================================================================
-    function extractGemini() {
+    function extractGeminiLegacy() {
         const turns = document.querySelectorAll('message-content, .conversation-container .response-container, model-response .response-container');
         if (!turns.length) return null;
         let md = '';
@@ -985,6 +1046,109 @@
             if (canvasMd.trim()) md += '## Canvas\n\n' + canvasMd.trim() + '\n\n';
         }
         return md.trim() || null;
+    }
+
+    function geminiParseSourceList(listEl) {
+        const lines = [];
+        if (!listEl) return lines;
+        let idx = 1;
+        const rows = listEl.querySelectorAll('browse-file-item, browse-tool-item');
+        for (const fi of rows) {
+            const btn = fi.querySelector('button[data-test-id="view-file-button"]');
+            const a = fi.querySelector('a[href]');
+            let title = '';
+            let href = '';
+            if (btn) {
+                const lab = btn.getAttribute('aria-label') || '';
+                const m = lab.match(/^Link to document,\s*(.+)/i) || lab.match(/^Link to page,\s*(.+)/i) || lab.match(/^Link to\s+\w+,\s*(.+)/i);
+                title = textCompact(m ? m[1] : lab.replace(/^Link to\s+\w+,\s*/i, ''));
+            }
+            if (a) {
+                href = normalizeHref(a.getAttribute('href'));
+                if (!title) title = textCompact(a.textContent || '');
+            }
+            if (!href && !title) continue;
+            if (href) lines.push(idx + '. [' + (title || href) + '](' + href + ')');
+            else lines.push(idx + '. ' + title);
+            idx++;
+        }
+        return lines;
+    }
+
+    function extractGeminiThoughtsMd() {
+        const headers = document.querySelectorAll('thought-item [data-test-id="thought-header"]');
+        if (!headers.length) return null;
+        const lines = [];
+        lines.push('## **Thoughts**');
+        lines.push('');
+        let idx = 1;
+        for (const h of headers) {
+            const item = h.closest('thought-item');
+            const title = textCompact(h.textContent || '');
+            const body = item ? item.querySelector('[data-test-id="thought-body"]') : null;
+            lines.push(idx + '. **' + title + '**');
+            lines.push('');
+            let si = 1;
+            if (body) {
+                const links = body.querySelectorAll('a[href]');
+                if (links.length) {
+                    for (const a of links) {
+                        const href = normalizeHref(a.getAttribute('href'));
+                        let tt = textCompact(a.textContent || '');
+                        const im = a.querySelector('img');
+                        if (im) tt = tt.replace(textCompact(im.getAttribute('alt') || ''), '').trim();
+                        lines.push('   ' + si + '. [' + (tt || href) + '](' + href + ')');
+                        si++;
+                    }
+                } else {
+                    const t = textCompact(body.textContent || '');
+                    if (t) lines.push('   ' + si + '. ' + t);
+                }
+            }
+            lines.push('');
+            idx++;
+        }
+        return lines.join('\n').trim();
+    }
+
+    function extractGeminiReportBody() {
+        const candidates = document.querySelectorAll('message-content, model-response message-content');
+        for (const r of candidates) {
+            if (!r.querySelector('deep-research-source-lists')) continue;
+            const clone = r.cloneNode(true);
+            clone.querySelectorAll('deep-research-source-lists, thinking-panel, tool-call-display').forEach(n => n.remove());
+            clone.querySelectorAll('mat-icon, img[src*="favicon"], img[alt*="favicon"]').forEach(n => n.remove());
+            const md = stripLeadingNonHeading(h2m(clone, gP().cs, new Map()).trim());
+            if (md.length > 120) return md;
+        }
+        return null;
+    }
+
+    async function extractGeminiMarkdown() {
+        const dr = document.querySelector('deep-research-source-lists');
+        if (!dr) return extractGeminiLegacy();
+
+        const ub = dr.querySelector('[data-test-id="unused-sources-button"] button');
+        if (ub && ub.getAttribute('aria-expanded') === 'false') {
+            try { ub.click(); } catch (_) {}
+            await sleep(320);
+        }
+
+        const usedEl = dr.querySelector('.source-list.used-sources');
+        const unusedEl = dr.querySelector('.source-list.unused-sources');
+        const usedLines = geminiParseSourceList(usedEl);
+        const unusedLines = geminiParseSourceList(unusedEl);
+
+        const parts = [];
+        const report = extractGeminiReportBody();
+        if (report) parts.push(report);
+        if (usedLines.length) parts.push('## **Sources used in the report**\n\n' + usedLines.join('\n\n'));
+        if (unusedLines.length) parts.push('## **Sources read but not used in the report**\n\n' + unusedLines.join('\n\n'));
+        const th = extractGeminiThoughtsMd();
+        if (th) parts.push(th);
+
+        if (!parts.length) return extractGeminiLegacy();
+        return parts.join('\n\n---\n\n').trim();
     }
 
     // =====================================================================
@@ -1075,10 +1239,7 @@
                 incSources: pr.incCite || pr.incScan
             };
             function sendMsg() {
-                try { if (iframe.contentWindow) iframe.contentWindow.postMessage(msg, '*'); } catch (_) {}
-                for (const f of document.querySelectorAll('iframe')) {
-                    try { if (f.contentWindow && f !== iframe) f.contentWindow.postMessage(msg, '*'); } catch (_) {}
-                }
+                postMessageToDeepResearchIframes(msg);
             }
             sendMsg();
             setTimeout(() => { if (!done) sendMsg(); }, 2000);
@@ -1217,14 +1378,14 @@
         }
 
         if (!parts.length && IS_GEMINI) {
-            const gemini = extractGemini();
+            const gemini = await extractGeminiMarkdown();
             if (gemini) parts.push(gemini);
         }
 
         if (!title) title = document.querySelector('h1')?.textContent?.trim() || document.querySelector('h2')?.textContent?.trim() || document.title.replace(/ | ChatGPT$/, '').trim();
 
         if (parts.length) {
-            showModal(fmtOut(parts.join('\n\n---\n\n'), title));
+            showModal(fmtOut(parts.join('\n\n---\n\n'), title), { drToolbar: true });
         } else if (!IS_DR_IFRAME && hasDRIframe()) {
             toast('Export triggered inside iframe. If no modal appears, click into the iframe and press Ctrl+M then R.', 5000);
         } else {
@@ -1235,7 +1396,10 @@
     // =====================================================================
     // PREVIEW MODAL (DOM-built, Trusted-Types safe)
     // =====================================================================
-    function showModal(markdown) {
+    function showModal(markdown, options) {
+        removeOpenH2mModals();
+        const opt = options || {};
+        const showDROpts = opt.drToolbar !== undefined ? opt.drToolbar : (IS_CHATGPT || IS_GEMINI || IS_DR_IFRAME || hasDROverlay() || hasDRIframe());
         const pr = gP();
         const cOpts = [{ v: 'parenthesized', l: 'Parenthesized' }, { v: 'inline', l: 'Inline' }, { v: 'endnotes', l: 'Endnotes' }, { v: 'footnotes', l: 'Footnotes' }, { v: 'named', l: 'Named' }, { v: 'none', l: 'None' }];
         const ov = el('div', { className: 'h2m-overlay' });
@@ -1257,11 +1421,20 @@
         tbR.appendChild(el('span', { className: 'h2m-lbl' }, 'Cite:')); tbR.appendChild(cSel);
         tbR.appendChild(mkCb('FM', 'h2m_frontmatter', true));
         tbR.appendChild(mkCb('H1', 'h2m_titleH1', false));
-        tbR.appendChild(mkCb('Citations', 'h2m_incCitations', true));
-        tbR.appendChild(mkCb('Scanned', 'h2m_incScanned', false));
-        tbR.appendChild(mkCb('Activity', 'h2m_incActivity', false));
+        const wrapLb = el('label', { className: 'h2m-lbl', style: { marginLeft: '6px' } });
+        const wrapCb = el('input', { type: 'checkbox' });
+        wrapCb.checked = !!pr.wrap;
+        wrapLb.appendChild(wrapCb);
+        wrapLb.appendChild(document.createTextNode(' Wrap'));
+        tbR.appendChild(wrapLb);
+        if (showDROpts) {
+            tbR.appendChild(mkCb('Citations', 'h2m_incCitations', true));
+            tbR.appendChild(mkCb('Scanned', 'h2m_incScanned', false));
+            tbR.appendChild(mkCb('Activity', 'h2m_incActivity', false));
+        }
 
         const body = el('div', { className: 'h2m-body' });
+        if (pr.wrap) body.classList.add('h2m-wrap-text');
         const ta = el('textarea'); ta.value = markdown;
         const pv = el('div', { className: 'h2m-preview' });
         function rp() {
@@ -1273,6 +1446,11 @@
             } else { pv.textContent = ta.value; }
         }
         rp(); ta.addEventListener('input', rp);
+        wrapCb.addEventListener('change', function () {
+            _set('h2m_wrapText', this.checked);
+            if (this.checked) body.classList.add('h2m-wrap-text');
+            else body.classList.remove('h2m-wrap-text');
+        });
         let sc = false;
         ta.addEventListener('scroll', function () { if (sc) { sc = false; return; } const p2 = this.scrollTop / (this.scrollHeight - this.offsetHeight || 1); pv.scrollTop = p2 * (pv.scrollHeight - pv.offsetHeight || 1); sc = true; });
         pv.addEventListener('scroll', function () { if (sc) { sc = false; return; } const p2 = this.scrollTop / (this.scrollHeight - this.offsetHeight || 1); ta.scrollTop = p2 * (ta.scrollHeight - ta.offsetHeight || 1); sc = true; });
@@ -1280,7 +1458,14 @@
         const clB = el('button', { className: 'h2m-close', type: 'button' }, '\u00D7');
         md.appendChild(tb); md.appendChild(body); md.appendChild(clB); ov.appendChild(md);
         const rm = () => { try { ov.remove(); } catch (_) {} document.removeEventListener('keydown', esc, true); };
-        const esc = (e) => { if (e.key === 'Escape') rm(); };
+        const esc = (e) => {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                if (typeof e.stopPropagation === 'function') e.stopPropagation();
+                if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+                rm();
+            }
+        };
         document.addEventListener('keydown', esc, true); clB.addEventListener('click', rm); ov.addEventListener('click', e => { if (e.target === ov) rm(); });
         cpB.addEventListener('click', () => { _clip(ta.value); cpB.textContent = 'Copied!'; setTimeout(() => { cpB.textContent = 'Copy'; }, 1500); });
         dlB.addEventListener('click', () => { const b = new Blob([ta.value], { type: 'text/markdown' }); const u = URL.createObjectURL(b); const fn = (document.title || document.querySelector('h1')?.textContent || 'Export').replace(/[\\/:*?"<>|]/g, '_'); const a = el('a', { href: u, download: fn + '.md' }); a.click(); URL.revokeObjectURL(u); });
@@ -1337,9 +1522,7 @@
     const PICKER_STYLE_CSS = '.h2m-sel{outline:3px dashed #ff2d2d!important;outline-offset:-2px!important;background:rgba(255,30,30,.12)!important;box-shadow:inset 0 0 0 1px rgba(255,0,0,.25)!important;z-index:2147483640!important;position:relative}';
 
     function sendToAllIframes(msg) {
-        for (const f of document.querySelectorAll('iframe')) {
-            try { if (f.contentWindow) f.contentWindow.postMessage(msg, '*'); } catch (_) {}
-        }
+        postMessageToDeepResearchIframes(msg);
     }
 
     function walkSameOriginDocs(baseDoc, fn, depth, seen) {
@@ -1428,6 +1611,15 @@
                 if (one) arr = [one];
             } catch (_) {}
         }
+        const shadowExtras = [];
+        for (const top of arr) {
+            if (!top || !top.shadowRoot || typeof top.shadowRoot.elementsFromPoint !== 'function') continue;
+            try {
+                const inner = top.shadowRoot.elementsFromPoint(x, y) || [];
+                for (const z of inner) shadowExtras.push(z);
+            } catch (_) {}
+        }
+        arr = shadowExtras.concat(arr);
         for (const el2 of arr) {
             if (!el2 || seen.has(el2)) continue;
             seen.add(el2);
@@ -1631,14 +1823,29 @@
     document.addEventListener('keydown', function (e) {
         if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'm') { e.preventDefault(); if (selecting) endSel(); else startSel(); return; }
         if (!selecting) return;
-        if (e.key === 'Escape') { e.preventDefault(); endSel(); return; }
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            if (typeof e.stopPropagation === 'function') e.stopPropagation();
+            if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+            try { window.parent.postMessage({ type: 'h2m-stop-picker' }, '*'); } catch (_) {}
+            endSel();
+            return;
+        }
         if (e.key.toUpperCase() === 'R') {
             e.preventDefault(); endSel();
             if (!IS_DR_IFRAME && hasDRIframe()) sendToAllIframes({ type: 'h2m-auto-export' });
             autoExportDR();
             return;
         }
-        if (e.key.toUpperCase() === 'G' && IS_GEMINI) { e.preventDefault(); endSel(); const g = extractGemini(); if (g) showModal(fmtOut(g, document.title)); else toast('No Gemini content found.', 3000); return; }
+        if (e.key.toUpperCase() === 'G' && IS_GEMINI) {
+            e.preventDefault();
+            endSel();
+            extractGeminiMarkdown().then(g => {
+                if (g) showModal(fmtOut(g, document.title), { drToolbar: true });
+                else toast('No Gemini content found.', 3000);
+            });
+            return;
+        }
         if (!selEl) return;
         const nav = { ArrowUp: 'p', ArrowDown: 'c', ArrowLeft: 'l', ArrowRight: 'r' }[e.key];
         if (!nav) return;
@@ -1676,7 +1883,8 @@
             const ownerDoc = clickedEl.ownerDocument || document;
             cit.reset();
             const md2 = h2m(clickedEl, gP().cs, fiberCites(ownerDoc));
-            showModal(fmtOut(md2, ownerDoc.title || document.title));
+            const drToolbar = IS_CHATGPT || IS_GEMINI || IS_DR_IFRAME || hasDROverlay() || hasDRIframe();
+            showModal(fmtOut(md2, ownerDoc.title || document.title), { drToolbar });
         }
     }, true);
 

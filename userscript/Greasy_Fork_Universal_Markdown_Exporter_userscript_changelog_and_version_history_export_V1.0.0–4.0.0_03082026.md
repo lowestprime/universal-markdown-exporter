@@ -34,6 +34,24 @@ These are all versions of this script. Each major update includes a description 
 
 - **Method C**: In the parent picker, scroll down on the highlighted iframe to send `h2m-start-picker`, activating the picker inside the iframe.
 
+## Version 4.2.0
+
+| # | Change | Why |
+| --- | --- | --- |
+| 1 | Export modal: horizontal overflow, `min-width: 0`, safe-centered overlay, **Wrap** toggle (`h2m_wrapText`) | Long URLs and code lines can scroll horizontally or wrap without breaking the layout |
+| 2 | Duplicate modals: `removeOpenH2mModals()` before opening | Prevents stacked `.h2m-overlay` instances |
+| 3 | **Esc** in picker: `stopPropagation` / `stopImmediatePropagation` + `postMessage` `h2m-stop-picker` to parent | Stops ChatGPT from collapsing the Deep Research shell before the userscript exits selection mode |
+| 4 | `postMessage` / `sendToAllIframes` limited to Deep Research iframes only | Avoids broadcasting `h2m-req` / `h2m-auto-export` into unrelated embeds (e.g. Google account OAuth), reducing blank-page and sign-in interference |
+| 5 | `@exclude` for `accounts.google.com`, `ogs.google.com`, `accountchooser.google.com`, `accounts.youtube.com` | Further reduces passive impact on Google account flows |
+| 6 | ChatGPT DR: `ensureChatGPTDRRightTab` switches **Sources** then **Activity** when exporting | Citations, scanned sources, and research activity are loaded from the correct tab panels in one run |
+| 7 | Scanned sources: only `button[aria-label^="Open scanned source"]` (dropped generic `Open source`) | Fixes inflated scanned counts and mis-attributed rows |
+| 8 | Scanned snippet lines use nested `-` bullets instead of nested `1.` | Avoids Markdown ordered-list numbering clashes under each main source |
+| 9 | Citations / scanned section headers use counts derived from extracted primary rows | Keeps the bracket count aligned with the actual list rendered in Markdown |
+| 10 | Activity entries scoped to `.space-y-4` direct children when present | Fewer duplicate or partial activity rows |
+| 11 | `elementsFromPoint` + open shadow-root hit testing | Improves sub-element picking inside shadow-DOM shells (e.g. some maximized report UIs) |
+| 12 | Gemini: `extractGeminiMarkdown()` async path for `deep-research-source-lists` | Structured **Sources used**, **Sources read but not used**, **Thoughts** (`thought-item` headers/bodies), favicon-stripped links; expands unused list when collapsed |
+| 13 | Modal **Citations / Scanned / Activity** toggles only when `drToolbar` applies (ChatGPT/Gemini/DR contexts) | Cleaner universal clipper on arbitrary sites |
+
 ## Version 3.2.0
 
 | Component | Before (broken) | After (fixed) |
