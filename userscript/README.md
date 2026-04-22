@@ -4,7 +4,7 @@ Converts highlighted html elements from most web pages into clean Markdown, expr
 
 ## Background and Motivation
 
-ChatGPT's Deep Research reports (as of ~March, 2026) are rendered inside sandboxed `<iframe>` elements on `web-sandbox.oaiusercontent.com`. Standard web clippers and HTML-to-Markdown tools cannot access these iframes, causing userscript malfunctions and empty or malformed outputs. Saved/exported ChatGPT pages embed the report as HTML-entity-encoded `srcdoc` attributes with multiple layers of encoding. Citation URLs are stored in React's internal fiber state, invisible in the static HTML. This script rectifys all three challenges, building upon the exceptional work of shiquda and ChinaGodMan's [MarkDown Cloud Cut Notes](https://greasyfork.org/scripts/530139).
+ChatGPT's Deep Research reports (as of ~March, 2026) are rendered inside sandboxed `<iframe>` elements on `web-sandbox.oaiusercontent.com`. Standard web clippers and HTML-to-Markdown tools cannot access these iframes, causing userscript malfunctions and empty or malformed outputs. Saved/exported ChatGPT pages embed the report as HTML-entity-encoded `srcdoc` attributes with multiple layers of encoding. Citation URLs are stored in React's internal fiber state, invisible in the static HTML. This script rectifies all three challenges, building upon the exceptional work of shiquda and ChinaGodMan's [MarkDown Cloud Cut Notes](https://greasyfork.org/scripts/530139).
 
 ## Foundation
 

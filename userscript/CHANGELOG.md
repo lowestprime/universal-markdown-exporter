@@ -1,14 +1,74 @@
 ---
-title: "Greasy Fork Universal Markdown Exporter – Changelog and Version History V1.0.0–4.0.0"
-date: 2026-03-08
+title: "Greasy Fork Universal Markdown Exporter Changelog and Version History: V1.0.0–4.2.0"
+date: 2026-04-22
 source: https://greasyfork.org/en/scripts/568581-universal-markdown-exporter/versions?show_all_versions=1
 ---
 
-# Universal Markdown Exporter Changelog and Version History V1.0.0–4.0.0 \[Retrieved March 8, 2026\]
+# Greasy Fork Universal Markdown Exporter Changelog and Version History: V1.0.0–4.2.0 \[Retrieved April 22, 2026\]
 
 Converts most web page elements into clean Markdown with visual element selection and live editor preview support. This Trusted-Types safe script supports extraction and conversion from ChatGPT deep research overlays with sub-element selection inside the maximized panel, including citation/sources/thinking-activity extraction, and Google Gemini deep research reports and canvases, featuring 6 citation styles, YAML frontmatter integration, and exporting to clipboard/file/GitHub/Obsidian.
 
 These are all versions of this script. Each major update includes a description answering the question: what's changed in this version relative to its immediate predecessor?
+
+## Version 4.2.0
+
+| # | Change | Why |
+| --- | --- | --- |
+| 1 | Export modal: horizontal overflow, `min-width: 0`, safe-centered overlay, **Wrap** toggle (`h2m_wrapText`) | Long URLs and code lines can scroll horizontally or wrap without breaking the layout |
+| 2 | Duplicate modals: `removeOpenH2mModals()` before opening | Prevents stacked `.h2m-overlay` instances |
+| 3 | **Esc** in picker: `stopPropagation` / `stopImmediatePropagation` + `postMessage` `h2m-stop-picker` to parent | Stops ChatGPT from collapsing the Deep Research shell before the userscript exits selection mode |
+| 4 | `postMessage` / `sendToAllIframes` limited to Deep Research iframes only | Avoids broadcasting `h2m-req` / `h2m-auto-export` into unrelated embeds (e.g. Google account OAuth), reducing blank-page and sign-in interference |
+| 5 | `@exclude` for `accounts.google.com`, `ogs.google.com`, `accountchooser.google.com`, `accounts.youtube.com` | Further reduces passive impact on Google account flows |
+| 6 | ChatGPT DR: `ensureChatGPTDRRightTab` switches **Sources** then **Activity** when exporting | Citations, scanned sources, and research activity are loaded from the correct tab panels in one run |
+| 7 | Scanned sources: only `button[aria-label^="Open scanned source"]` (dropped generic `Open source`) | Fixes inflated scanned counts and mis-attributed rows |
+| 8 | Scanned snippet lines use nested `-` bullets instead of nested `1.` | Avoids Markdown ordered-list numbering clashes under each main source |
+| 9 | Citations / scanned section headers use counts derived from extracted primary rows | Keeps the bracket count aligned with the actual list rendered in Markdown |
+| 10 | Activity entries scoped to `.space-y-4` direct children when present | Fewer duplicate or partial activity rows |
+| 11 | `elementsFromPoint` + open shadow-root hit testing | Improves sub-element picking inside shadow-DOM shells (e.g. some maximized report UIs) |
+| 12 | Gemini: `extractGeminiMarkdown()` async path for `deep-research-source-lists` | Structured **Sources used**, **Sources read but not used**, **Thoughts** (`thought-item` headers/bodies), favicon-stripped links; expands unused list when collapsed |
+| 13 | Modal **Citations / Scanned / Activity** toggles only when `drToolbar` applies (ChatGPT/Gemini/DR contexts) | Cleaner universal clipper on arbitrary sites |
+
+## Version 4.1.0
+
+Deep Research export and element-picker hardening release focused on reliability in maximized ChatGPT Deep Research views, iframe contexts, and saved HTML (`srcdoc`) exports.
+
+| # | Change | Why (v4.0.0 issue) | User Impact |
+| --- | --- | --- | --- |
+| 1 | Replaced fragmented DR extraction paths with a single unified pipeline: `collectDeepResearchSections(doc, prefs)` used by iframe bridge, iframe-local export, and parent fallback | In 4.0.0, panel extractors existed but could be skipped or not assembled consistently depending on path | Report + panel sections now extract consistently regardless of where export is triggered |
+| 2 | Right-panel sections are now assembled in deterministic order: **Report → Citations → Scanned → Connector Scanned → Activity** | 4.0.0 could produce partial or inconsistent section ordering | Predictable, stable output structure across exports |
+| 3 | Hardened panel targeting with ARIA-first selectors: `report-references-citations`, `report-references-sources-scanned`, `report-references-connector-sources-scanned`, `report-activity-title`, with fallback selectors retained | 4.0.0 relied more heavily on brittle class chains | Better resilience to UI/class churn in Deep Research DOM updates |
+| 4 | Added robust “More” expansion pass for Sources/Activity (`N more`, `See more`, `Show more`) while explicitly excluding navigation controls like `Open source` / `Open scanned source` | 4.0.0 could miss collapsed entries or accidentally trigger navigation | Higher extraction completeness without tab-opening side effects |
+| 5 | Extended bridge request payload to explicit booleans: `incCitations`, `incScanned`, `incActivity`; kept backward compatibility with `incSources` | 4.0.0 payload semantics were less explicit and could cause mismatch between requested and returned sections | Toggle behavior is clearer and more reliable across old/new bridge paths |
+| 6 | Extended `h2m-res` response to return structured extras (`citations`, `scanned`, `connectorScanned`, `activity`) and merged these in parent `autoExportDR` | 4.0.0 could return sparse/`null` side data even when available | Parent-side exports now preserve panel data more reliably |
+| 7 | Added recursive `srcdoc` fallback for saved exports, including nested HTML-entity decoding and best-document scoring by DR markers/text density | 4.0.0 fallback for saved HTML was not robust enough for nested encoded `srcdoc` structures | Saved Deep Research HTML exports are far more recoverable, especially report body extraction |
+| 8 | Upgraded picker hit-testing from topmost-only `elementFromPoint` behavior to ranked `elementsFromPoint` selection | 4.0.0 picker could lock onto full-screen wrapper layers in maximized views | Sub-element targeting is significantly more usable in complex overlays |
+| 9 | Added giant full-viewport wrapper suppression when deeper valid targets exist | 4.0.0 often selected container shells instead of actual content nodes | Easier paragraph/item-level selection in report and side panels |
+| 10 | Added same-origin nested iframe picker descent (coordinate translation + style injection in nested docs) | 4.0.0 could not reliably descend to real content nodes inside nested frame layouts | Better subelement highlighting/click-export inside nested same-origin iframe structures |
+| 11 | Preserved cross-origin fallback route and added explicit guidance toast when origin isolation blocks deep subelement access | 4.0.0 failure mode was less explicit in origin-isolated contexts | Clearer UX: users are guided to iframe handoff/full export instead of silent failure |
+| 12 | Version bump: `4.0.0 → 4.1.0`; existing hotkeys/UI controls remain intact (no breaking control changes) | Needed a stability-focused minor feature release | Upgrade without workflow retraining |
+
+### Added
+
+1.  Unified Deep Research section collector/assembler across all DR export paths.
+2.  Recursive nested `srcdoc` parser and fallback doc scoring.
+3.  Ranked picker targeting and same-origin nested-iframe descent.
+4.  Explicit cross-origin isolation guidance for picker limitations.
+
+### Changed
+
+1.  Bridge request/response schema is richer and backward compatible.
+2.  Panel extraction now favors semantic ARIA hooks first, then fallback selectors.
+3.  Export assembly now honors toggles consistently and appends sections in a fixed order.
+
+### Removed / Retired
+
+1.  Retired effective dead-path behavior where panel extraction logic could exist but not be invoked in final output assembly.
+
+### Compatibility / Notes
+
+1.  No breaking changes to core user-facing controls (`Ctrl+M`, `R`, `G`, menu commands, modal workflow).
+2.  `incSources` compatibility retained for older bridge interactions.
+3.  Connector scanned section is exported when present, including valid empty-state output when no connector sources are available.
 
 ## Version 4.0.0
 
@@ -33,24 +93,6 @@ These are all versions of this script. Each major update includes a description 
 - **Method B**: Click into the iframe to give it focus, then press `Ctrl+M` to activate the picker inside the iframe directly. Hover, arrow-navigate, click to export any sub-element.
 
 - **Method C**: In the parent picker, scroll down on the highlighted iframe to send `h2m-start-picker`, activating the picker inside the iframe.
-
-## Version 4.2.0
-
-| # | Change | Why |
-| --- | --- | --- |
-| 1 | Export modal: horizontal overflow, `min-width: 0`, safe-centered overlay, **Wrap** toggle (`h2m_wrapText`) | Long URLs and code lines can scroll horizontally or wrap without breaking the layout |
-| 2 | Duplicate modals: `removeOpenH2mModals()` before opening | Prevents stacked `.h2m-overlay` instances |
-| 3 | **Esc** in picker: `stopPropagation` / `stopImmediatePropagation` + `postMessage` `h2m-stop-picker` to parent | Stops ChatGPT from collapsing the Deep Research shell before the userscript exits selection mode |
-| 4 | `postMessage` / `sendToAllIframes` limited to Deep Research iframes only | Avoids broadcasting `h2m-req` / `h2m-auto-export` into unrelated embeds (e.g. Google account OAuth), reducing blank-page and sign-in interference |
-| 5 | `@exclude` for `accounts.google.com`, `ogs.google.com`, `accountchooser.google.com`, `accounts.youtube.com` | Further reduces passive impact on Google account flows |
-| 6 | ChatGPT DR: `ensureChatGPTDRRightTab` switches **Sources** then **Activity** when exporting | Citations, scanned sources, and research activity are loaded from the correct tab panels in one run |
-| 7 | Scanned sources: only `button[aria-label^="Open scanned source"]` (dropped generic `Open source`) | Fixes inflated scanned counts and mis-attributed rows |
-| 8 | Scanned snippet lines use nested `-` bullets instead of nested `1.` | Avoids Markdown ordered-list numbering clashes under each main source |
-| 9 | Citations / scanned section headers use counts derived from extracted primary rows | Keeps the bracket count aligned with the actual list rendered in Markdown |
-| 10 | Activity entries scoped to `.space-y-4` direct children when present | Fewer duplicate or partial activity rows |
-| 11 | `elementsFromPoint` + open shadow-root hit testing | Improves sub-element picking inside shadow-DOM shells (e.g. some maximized report UIs) |
-| 12 | Gemini: `extractGeminiMarkdown()` async path for `deep-research-source-lists` | Structured **Sources used**, **Sources read but not used**, **Thoughts** (`thought-item` headers/bodies), favicon-stripped links; expands unused list when collapsed |
-| 13 | Modal **Citations / Scanned / Activity** toggles only when `drToolbar` applies (ChatGPT/Gemini/DR contexts) | Cleaner universal clipper on arbitrary sites |
 
 ## Version 3.2.0
 
