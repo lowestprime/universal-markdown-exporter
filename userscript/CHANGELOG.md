@@ -4,11 +4,24 @@ date: 2026-04-22
 source: https://greasyfork.org/en/scripts/568581-universal-markdown-exporter/versions?show_all_versions=1
 ---
 
-# Greasy Fork Universal Markdown Exporter Changelog and Version History: V1.0.0–4.2.0 \[Retrieved April 22, 2026\]
+# Greasy Fork Universal Markdown Exporter Changelog and Version History: V1.0.0–4.2.1 \[Retrieved April 22, 2026\]
 
 Converts most web page elements into clean Markdown with visual element selection and live editor preview support. This Trusted-Types safe script supports extraction and conversion from ChatGPT deep research overlays with sub-element selection inside the maximized panel, including citation/sources/thinking-activity extraction, and Google Gemini deep research reports and canvases, featuring 6 citation styles, YAML frontmatter integration, and exporting to clipboard/file/GitHub/Obsidian.
 
 These are all versions of this script. Each major update includes a description answering the question: what's changed in this version relative to its immediate predecessor?
+
+## Version 4.2.1
+
+| # | Change | Why |
+| --- | --- | --- |
+| 1 | Added `ensureChatGPTDROpenRightPanel()` before tab switching/extraction | Sources/Activity panels may not be mounted until explicitly opened; exports should not depend on manual panel opening |
+| 2 | Hardened tab activation with retries and mounted-section checks (`ensureChatGPTDRRightTab`) | Newer ChatGPT panel transitions can be delayed; single-click tab switching was not always enough |
+| 3 | Split report and side-panel extraction contexts in `collectDeepResearchSections` | Report body and side panels can be resolved from different DOM contexts; panel extraction now runs from the chat document context |
+| 4 | Added bridge-success fallback to parent-side panel extraction when bridge extras are missing | If iframe bridge returns report but no panel extras, citations/scanned/activity are still recovered automatically |
+| 5 | Activity extractor fallback now clones entry, strips controls/title/rail, and emits residual thought text as nested bullets | Prevents headings-only Research Activity exports when class-based body selectors miss |
+| 6 | DR iframe picker click no longer auto-runs full export; now performs picker handoff only | Restores expected subelement-selection workflow inside maximized Deep Research iframe context |
+| 7 | `sendPickerToIframe()` now retries `postMessage` several times | Improves reliability when sandbox frame listeners are not yet ready |
+| 8 | Bumped userscript version `4.2.0 → 4.2.1` | Patch release for DR picker + side-panel extraction reliability fixes |
 
 ## Version 4.2.0
 

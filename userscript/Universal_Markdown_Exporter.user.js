@@ -24,7 +24,7 @@
 // @compatible        opera
 // @compatible        safari
 // @compatible        brave
-// @version           4.2.0
+// @version           4.2.1
 // @downloadURL       https://update.greasyfork.org/scripts/530139/Universal%20Markdown%20Exporter.user.js
 // @updateURL         https://update.greasyfork.org/scripts/530139/Universal%20Markdown%20Exporter.meta.js
 // ==/UserScript==
@@ -512,9 +512,38 @@
         }
     }
 
+    function hasDRPanelSections(doc) {
+        const d = doc || document;
+        return !!(getDRSection(d, 'citations') || getDRSection(d, 'scanned') || getDRSection(d, 'activity'));
+    }
+
+    async function ensureChatGPTDROpenRightPanel(doc) {
+        const d = doc || document;
+        if (hasDRPanelSections(d) || d.querySelector('[role="tablist"] [role="tab"]')) return true;
+
+        const iconButtons = [...d.querySelectorAll('button, [role="button"]')].filter(b => {
+            if (!b || b.disabled) return false;
+            const txt = textCompact(b.textContent || '').toLowerCase();
+            const aria = textCompact((b.getAttribute('aria-label') || b.getAttribute('title') || '')).toLowerCase();
+            if (/close|dismiss|minimize|maximize/.test(txt) || /close|dismiss|minimize|maximize/.test(aria)) return false;
+            if (/sources|activity|citations|research/.test(txt) || /sources|activity|citations|research/.test(aria)) return true;
+            const hasIconOnly = !txt && !!b.querySelector('svg, img, [role="img"]');
+            if (!hasIconOnly) return false;
+            return !!b.closest('header, [class*="report"], [class*="toolbar"], [class*="top"], [class*="sticky"]');
+        });
+
+        for (const b of iconButtons) {
+            try { b.click(); } catch (_) {}
+            await sleep(140);
+            if (hasDRPanelSections(d) || d.querySelector('[role="tablist"] [role="tab"]')) return true;
+        }
+        return false;
+    }
+
     async function ensureChatGPTDRRightTab(doc, which) {
         const d = doc || document;
-        const tabs = [...d.querySelectorAll('[role="tab"]')].filter(b => textCompact(b.textContent || '').length < 80);
+        await ensureChatGPTDROpenRightPanel(d);
+        const tabs = [...d.querySelectorAll('[role="tab"]')].filter(b => textCompact(b.textContent || '').length < 120);
         if (tabs.length < 2) return false;
         const wantSources = which === 'sources';
         const pick = () => tabs.find(b => {
@@ -524,9 +553,13 @@
         });
         const tb = pick();
         if (!tb) return false;
-        try { tb.click(); } catch (_) {}
-        await sleep(160);
-        return true;
+        for (let i = 0; i < 3; i++) {
+            try { tb.click(); } catch (_) {}
+            await sleep(170 + (i * 80));
+            if (wantSources && (getDRSection(d, 'citations') || getDRSection(d, 'scanned'))) return true;
+            if (!wantSources && getDRSection(d, 'activity')) return true;
+        }
+        return !!tb;
     }
 
     function decodeHtmlEntities(raw) {
@@ -909,26 +942,39 @@
                 }
             }
 
-            if (!isSearch) {
-                const bodyRoot = entry.querySelector('.text-token-text-secondary.mt-2, .text-token-text-secondary.space-y-2, .text-token-text-secondary');
-                if (bodyRoot) {
-                    const ps = bodyRoot.querySelectorAll('p');
-                    if (ps.length) {
-                        for (const p2 of ps) {
-                            const t = textCompact(p2.textContent);
-                            if (!t) continue;
-                            const trimmed = t.length > 350 ? t.substring(0, 350) + '...' : t;
-                            lines.push('   ' + sub + '. ' + trimmed);
-                            sub++;
-                        }
-                    } else {
-                        const t = textCompact(bodyRoot.textContent);
-                        if (t) {
-                            const trimmed = t.length > 350 ? t.substring(0, 350) + '...' : t;
-                            lines.push('   ' + sub + '. ' + trimmed);
-                            sub++;
-                        }
+            const bodyRoots = entry.querySelectorAll('.text-token-text-secondary.mt-2, .text-token-text-secondary.space-y-2, .text-token-text-secondary');
+            let pushedBody = false;
+            for (const bodyRoot of bodyRoots) {
+                const ps = bodyRoot.querySelectorAll('p');
+                if (ps.length) {
+                    for (const p2 of ps) {
+                        const t = textCompact(p2.textContent);
+                        if (!t || t === title) continue;
+                        const trimmed = t.length > 350 ? t.substring(0, 350) + '...' : t;
+                        lines.push('   ' + sub + '. ' + trimmed);
+                        sub++;
+                        pushedBody = true;
                     }
+                } else {
+                    const t = textCompact(bodyRoot.textContent);
+                    if (t && t !== title) {
+                        const trimmed = t.length > 350 ? t.substring(0, 350) + '...' : t;
+                        lines.push('   ' + sub + '. ' + trimmed);
+                        sub++;
+                        pushedBody = true;
+                    }
+                }
+            }
+
+            if (!pushedBody) {
+                const clone = entry.cloneNode(true);
+                for (const n of clone.querySelectorAll('a, button, svg, img, sup, [role="img"]')) n.remove();
+                for (const n of clone.querySelectorAll('.text-token-text-primary, .w-6.shrink-0.flex-col.items-center')) n.remove();
+                const fallbackText = textCompact(clone.textContent || '');
+                if (fallbackText && fallbackText !== title) {
+                    const trimmed = fallbackText.length > 350 ? fallbackText.substring(0, 350) + '...' : fallbackText;
+                    lines.push('   ' + sub + '. ' + trimmed);
+                    sub++;
                 }
             }
 
@@ -951,6 +997,7 @@
         const opts = options || {};
 
         let sourceDoc = d;
+        const panelDoc = d;
         let report = extractDRReportFromDoc(sourceDoc, p);
         if ((!report || !report.trim()) && opts.allowSrcdocFallback !== false) {
             const fallbackDoc = findBestSrcdocDocument(sourceDoc);
@@ -967,21 +1014,21 @@
         let activity = null;
 
         if (opts.expand !== false && (p.incCitations || p.incScanned)) {
-            await ensureChatGPTDRRightTab(sourceDoc, 'sources');
-            await expandDRMoreControls(sourceDoc, { ...p, incActivity: false });
+            await ensureChatGPTDRRightTab(panelDoc, 'sources');
+            await expandDRMoreControls(panelDoc, { ...p, incActivity: false });
         }
 
-        if (p.incCitations) citations = extractDRCitationsFromDoc(sourceDoc);
+        if (p.incCitations) citations = extractDRCitationsFromDoc(panelDoc);
         if (p.incScanned) {
-            scanned = extractDRScannedFromDoc(sourceDoc, 'scanned');
-            connectorScanned = extractDRScannedFromDoc(sourceDoc, 'connector');
+            scanned = extractDRScannedFromDoc(panelDoc, 'scanned');
+            connectorScanned = extractDRScannedFromDoc(panelDoc, 'connector');
         }
 
         if (opts.expand !== false && p.incActivity) {
-            await ensureChatGPTDRRightTab(sourceDoc, 'activity');
-            await expandDRMoreControls(sourceDoc, { incCitations: false, incScanned: false, incActivity: true });
+            await ensureChatGPTDRRightTab(panelDoc, 'activity');
+            await expandDRMoreControls(panelDoc, { incCitations: false, incScanned: false, incActivity: true });
         }
-        if (p.incActivity) activity = extractDRActivityFromDoc(sourceDoc, duration);
+        if (p.incActivity) activity = extractDRActivityFromDoc(panelDoc, duration);
 
         return {
             doc: sourceDoc,
@@ -1329,6 +1376,17 @@
                 if (pr.incScan && bridge.scanned) parts.push(bridge.scanned.trim());
                 if (pr.incScan && bridge.connectorScanned) parts.push(bridge.connectorScanned.trim());
                 if (pr.incAct && bridge.activity) parts.push(bridge.activity.trim());
+
+                const missingPanelData = (pr.incCite && !bridge.citations) || (pr.incScan && !bridge.scanned && !bridge.connectorScanned) || (pr.incAct && !bridge.activity);
+                if (missingPanelData) {
+                    const panelSections = await collectDeepResearchSections(document, pref, { expand: true, allowSrcdocFallback: false });
+                    if (panelSections) {
+                        if (pr.incCite && !bridge.citations && panelSections.citations) parts.push(panelSections.citations.trim());
+                        if (pr.incScan && !bridge.scanned && panelSections.scanned) parts.push(panelSections.scanned.trim());
+                        if (pr.incScan && !bridge.connectorScanned && panelSections.connectorScanned) parts.push(panelSections.connectorScanned.trim());
+                        if (pr.incAct && !bridge.activity && panelSections.activity) parts.push(panelSections.activity.trim());
+                    }
+                }
             }
             if (!parts.length) {
                 const direct = await tryDirectIframeAccess();
@@ -1783,12 +1841,18 @@
 
     function sendPickerToIframe(iframe) {
         let posted = false;
-        try {
-            if (iframe && iframe.contentWindow) {
-                iframe.contentWindow.postMessage({ type: 'h2m-start-picker' }, '*');
-                posted = true;
-            }
-        } catch (_) {}
+        const tryPost = () => {
+            try {
+                if (iframe && iframe.contentWindow) {
+                    iframe.contentWindow.postMessage({ type: 'h2m-start-picker' }, '*');
+                    posted = true;
+                }
+            } catch (_) {}
+        };
+        tryPost();
+        setTimeout(tryPost, 220);
+        setTimeout(tryPost, 700);
+        setTimeout(tryPost, 1400);
 
         if (!posted) {
             toast('Unable to send picker to this iframe. Press R for full Deep Research export.', 5000);
@@ -1858,9 +1922,6 @@
     document.addEventListener('mousedown', function (e) {
         if (!selecting) return;
         if (isUs(e.target)) return;
-        e.preventDefault();
-        e.stopImmediatePropagation();
-
         if (tipEl) tipEl.style.display = 'none';
         const picked = pickTargetAtPoint(document, e.clientX, e.clientY, 0);
         if (tipEl) tipEl.style.display = '';
@@ -1869,12 +1930,17 @@
         if (!selEl) return;
 
         const clickedEl = selEl;
+        const iframeClick = clickedEl.tagName === 'IFRAME';
+        if (!iframeClick) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }
         endSel();
 
         if (clickedEl.tagName === 'IFRAME' && isDRElement(clickedEl)) {
+            try { clickedEl.focus(); } catch (_) {}
             sendPickerToIframe(clickedEl);
-            sendToAllIframes({ type: 'h2m-auto-export' });
-            autoExportDR();
+            toast('Picker handoff sent to Deep Research iframe. Click inside the report area and select a subelement.', 5000);
         } else if (clickedEl.tagName === 'IFRAME') {
             sendPickerToIframe(clickedEl);
         } else if (IS_CHATGPT && !IS_DR_IFRAME && isDRElement(clickedEl)) {
