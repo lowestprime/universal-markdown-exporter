@@ -1,35 +1,9 @@
-# OS / editor
+# OS/editor noise only
 .DS_Store
 Thumbs.db
+desktop.ini
 .vscode/
 .idea/
-
-# Node / web
-node_modules/
-.next/
-dist/
-build/
-coverage/
-
-# Python
-__pycache__/
-*.pyc
-.venv/
-venv/
-
-# Logs / temp
-*.log
-tmp/
-temp/
-
-# Local data
-data/*.sqlite
-data/*.sqlite-shm
-data/*.sqlite-wal
-
-# Secrets
-.env
-.env.*
-*.pem
-*.key
-*.tsbuildinfo
+*.swp
+*.tmp
+*.bak
