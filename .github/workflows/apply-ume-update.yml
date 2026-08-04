@@ -1,5 +1,6 @@
 name: Apply Universal Markdown Exporter update bundle
 
+# Touch to emit the pull-request synchronize event for the trusted base workflow.
 on:
   push:
     branches:
