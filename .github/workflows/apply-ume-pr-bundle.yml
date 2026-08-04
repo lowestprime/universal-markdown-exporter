@@ -1,0 +1,48 @@
+name: Apply Universal Markdown Exporter PR bundle
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-ume-pr-bundle-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'fix/chatgpt-deep-research-export-routing'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/chatgpt-deep-research-export-routing
+          fetch-depth: 0
+      - name: Verify, apply, validate, and clean the staged bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f tools/.ume-update/part-00.b64 ]]; then
+            echo 'Bundle already applied and staging files removed.'
+            exit 0
+          fi
+          cat tools/.ume-update/part-*.b64 > /tmp/ume-update.b64
+          printf '%s  %s\n' 'f14aaadc8430c9aa14f2d4dc9be830827b6cd0febcce48cd0625947cc9796be4' /tmp/ume-update.b64 | sha256sum -c -
+          base64 --decode /tmp/ume-update.b64 > /tmp/ume-update.tar.gz
+          printf '%s  %s\n' 'c4a28e30d71670d0eb905fd12c23437d76a9817132f52c5cb749e1e5a5a23e95' /tmp/ume-update.tar.gz | sha256sum -c -
+          tar -xzf /tmp/ume-update.tar.gz -C .
+          node tools/validate_userscript.mjs
+          rm -rf tools/.ume-update
+          rm -f .github/workflows/apply-ume-update.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'Fix ChatGPT Deep Research export routing and picker'
+          git push origin HEAD:fix/chatgpt-deep-research-export-routing
