@@ -1,0 +1,40 @@
+name: Apply Universal Markdown Exporter update bundle
+
+on:
+  push:
+    branches:
+      - fix/chatgpt-deep-research-export-routing
+    paths:
+      - tools/.ume-update/**
+      - .github/workflows/apply-ume-update.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/chatgpt-deep-research-export-routing
+          fetch-depth: 0
+      - name: Verify and apply bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat tools/.ume-update/part-*.b64 > /tmp/ume-update.b64
+          printf '%s  %s\n' 'f14aaadc8430c9aa14f2d4dc9be830827b6cd0febcce48cd0625947cc9796be4' /tmp/ume-update.b64 | sha256sum -c -
+          base64 --decode /tmp/ume-update.b64 > /tmp/ume-update.tar.gz
+          printf '%s  %s\n' 'c4a28e30d71670d0eb905fd12c23437d76a9817132f52c5cb749e1e5a5a23e95' /tmp/ume-update.tar.gz | sha256sum -c -
+          tar -xzf /tmp/ume-update.tar.gz -C .
+          node tools/validate_userscript.mjs
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add PLANS.md README.md userscript .github/workflows/validate.yml tools/browser_regression.py tools/inspect_deep_research_dom.py tools/validate_userscript.mjs
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'Fix ChatGPT Deep Research export routing and picker'
+          git push origin HEAD:fix/chatgpt-deep-research-export-routing
