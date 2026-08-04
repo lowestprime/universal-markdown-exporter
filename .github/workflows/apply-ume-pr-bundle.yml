@@ -3,19 +3,22 @@ name: Apply Universal Markdown Exporter PR bundle
 on:
   pull_request_target:
     types: [opened, reopened, synchronize]
+  schedule:
+    - cron: '*/5 * * * *'
 
 permissions:
   contents: write
 
 concurrency:
-  group: apply-ume-pr-bundle-${{ github.event.pull_request.number }}
+  group: apply-ume-pr-bundle
   cancel-in-progress: false
 
 jobs:
   apply:
     if: >-
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.head.ref == 'fix/chatgpt-deep-research-export-routing'
+      github.event_name == 'schedule' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'fix/chatgpt-deep-research-export-routing')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
