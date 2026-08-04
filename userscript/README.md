@@ -23,8 +23,9 @@ This tool is a direct fork of shiquda and ChinaGodMan's [MarkDown Cloud Cut Note
 ## Usage
 
 1. **From target website** — Press `Ctrl+M` (or use the Tampermonkey menu → "Convert to Markdown") to enter element selection mode. Use arrow keys or scroll wheel and cursor to navigate across elements, then click to convert the highlighted element of interest.
-2. **ChatGPT Deep Research** — Press `R` during selection mode, or use the Tampermonkey menu → "Export Deep Research" to auto-detect and extract the full report with citations.
-3. **Saved ChatGPT HTML files** — Open the saved `.html` file in your browser. The script detects `srcdoc` iframes and extracts the embedded report.
+2. **ChatGPT Deep Research full export** — Press `R` during selection mode, or use the userscript menu → "Export Deep Research", to extract the active visible report and requested citation/activity sections into one parent-owned modal.
+3. **Deep Research subelement export** — Press `Ctrl+M` and click a highlighted heading, paragraph, table, citation, or panel item. Embedded cross-origin reports use a temporary parent shield to activate the picker inside the report frame without navigating the ChatGPT page.
+4. **Saved ChatGPT HTML files** — Open the saved `.html` file in your browser. The script detects `srcdoc` iframes and extracts the embedded report.
 
 ## Export options
 
@@ -44,9 +45,17 @@ This tool is a direct fork of shiquda and ChinaGodMan's [MarkDown Cloud Cut Note
 | Scroll wheel | Expand/shrink selection |
 | `R` | Auto-export Deep Research content |
 | `Esc` | Cancel selection or close modal |
-| Click | Convert selected element to Markdown |
+| Click | Convert the highlighted element without activating its link or route |
 
 ## Requirements
 
 - [Tampermonkey](https://www.tampermonkey.net/) or compatible userscript manager
 - Works on Chrome, Firefox, Edge, Opera, Safari, Brave
+## Regression validation
+
+```bash
+node tools/validate_userscript.mjs
+python tools/browser_regression.py
+```
+
+The browser suite uses only synthetic content and verifies one-modal ownership, visible-frame selection, click-through prevention, nested frame selection, and runtime deduplication.
