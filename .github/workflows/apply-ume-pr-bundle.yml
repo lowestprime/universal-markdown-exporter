@@ -1,11 +1,25 @@
-name: Disabled temporary UME bundle workflow
+name: Validate Universal Markdown Exporter
 
 on:
-  workflow_dispatch:
+  push:
+    paths:
+      - 'userscript/**.js'
+      - '.github/workflows/apply-ume-pr-bundle.yml'
+  pull_request:
+    paths:
+      - 'userscript/**.js'
+      - '.github/workflows/apply-ume-pr-bundle.yml'
+
+permissions:
+  contents: read
 
 jobs:
-  disabled:
-    if: false
+  syntax:
     runs-on: ubuntu-latest
     steps:
-      - run: echo 'This temporary workflow is intentionally disabled.'
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check userscript syntax
+        run: node --check userscript/Universal_Markdown_Exporter.user.js
