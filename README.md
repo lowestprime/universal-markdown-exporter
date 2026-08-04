@@ -3,7 +3,8 @@
 A Trusted-Types-safe userscript for converting web content into clean Markdown, with first-class support for ChatGPT Deep Research reports, Google Gemini deep research pages, citation/source extraction, live Markdown preview, and export targets including clipboard, Markdown download, GitHub Issues, and Obsidian.
 
 - Greasy Fork: <https://greasyfork.org/en/scripts/568581-universal-markdown-exporter>
-- Current public version: `4.2.1`
+- Repository version: `4.3.0`
+- Greasy Fork publication: update the linked listing with the same `4.3.0` userscript after merge
 - Author: `lowestprime`
 - License: MIT
 - Userscript manager: Tampermonkey, Violentmonkey, Greasemonkey, or compatible
@@ -30,7 +31,7 @@ The script began as a Trusted-Types-safe rewrite and substantial extension of ea
 - Extracts the main report body from the iframe or saved `srcdoc` content.
 - Recovers citations, scanned sources, connector scanned sources, and research activity when those panels are mounted.
 - Uses robust parent/iframe fallback paths so exports do not depend on a single brittle DOM layout.
-- Supports maximized report views, side-panel extraction, and sub-element selection where browser origin rules permit it.
+- Supports maximized/full-tab report views and cross-origin nested sub-element selection through a parent/iframe picker handoff.
 
 ### Gemini support
 
@@ -75,10 +76,11 @@ The script began as a Trusted-Types-safe rewrite and substantial extension of ea
 ### ChatGPT Deep Research export
 
 1. Open a ChatGPT conversation containing a Deep Research report.
-2. Open or maximize the report if needed.
-3. Press `Ctrl+M` to enter selection mode.
-4. Press `R` to auto-export the report, citations, scanned sources, and activity panels according to the modal toggles.
-5. If a right-side Sources or Activity panel is not mounted yet, the script attempts to open and switch the needed tabs before extraction.
+2. Open, maximize, or open the report in its full-tab page.
+3. For the complete report, press `Ctrl+M`, then `R`, or use the `Export Deep Research` userscript menu command.
+4. For one heading, paragraph, table, citation, or side-panel item, press `Ctrl+M` and click that highlighted element. `R` is reserved for full-report export.
+5. When the report is embedded cross-origin, the parent page places a temporary picker shield over the active visible report. Clicking it activates selection inside the report frame; the selected nested element is returned to one parent modal.
+6. If the Sources or Activity panel is not mounted, the exporter targets only the explicit `Sources and activity` control and then switches the required tab.
 
 ### Saved ChatGPT HTML exports
 
@@ -131,13 +133,23 @@ Recommended public repository policy:
 - Prefer synthetic fixtures for reproducible bug reports.
 - Keep the Greasy Fork script version, `@version` metadata, `CHANGELOG.md`, and GitHub release tags synchronized.
 
+## Validation
+
+```bash
+node tools/validate_userscript.mjs
+python tools/browser_regression.py
+python tools/inspect_deep_research_dom.py /path/to/saved-expanded-dom.html --assert-expanded-report
+```
+
+The browser regression uses a synthetic report and checks active-frame routing, one-modal ownership, anchor-navigation suppression, nested picker export, and duplicate-runtime prevention. It requires Python Playwright and Chromium; GitHub Actions installs both automatically.
+
 ## Release checklist
 
-1. Update `@version` in `userscript/Universal_Markdown_Exporter.user.js`.
+1. Update `@version`, `@downloadURL`, and `@updateURL` in `userscript/Universal_Markdown_Exporter.user.js`.
 2. Update `userscript/CHANGELOG.md` and the root README if user-facing behavior changed.
-3. Run any local validation tools in `tools/`.
+3. Run `node tools/validate_userscript.mjs` and `python tools/browser_regression.py`.
 4. Commit the release.
-5. Tag the commit, for example: `v4.2.1`.
+5. Tag the commit, for example: `v4.3.0`.
 6. Push the branch and tag to GitHub.
 7. Update Greasy Fork with the same script source.
 8. Verify the public install URL points to the expected version.

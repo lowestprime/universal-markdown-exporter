@@ -24,9 +24,9 @@
 // @compatible        opera
 // @compatible        safari
 // @compatible        brave
-// @version           4.2.1
-// @downloadURL       https://update.greasyfork.org/scripts/530139/Universal%20Markdown%20Exporter.user.js
-// @updateURL         https://update.greasyfork.org/scripts/530139/Universal%20Markdown%20Exporter.meta.js
+// @version           4.3.0
+// @downloadURL       https://update.greasyfork.org/scripts/568581/Universal%20Markdown%20Exporter.user.js
+// @updateURL         https://update.greasyfork.org/scripts/568581/Universal%20Markdown%20Exporter.meta.js
 // ==/UserScript==
 // -----------------------------------------------------------------------
 // Based on "MarkDown Cloud Cut Notes" (v2025.03.19) by shiquda and
@@ -37,10 +37,27 @@
 (function () {
     'use strict';
 
+    const SCRIPT_VERSION = '4.3.0';
+    const DR_PROTOCOL = 'ume.deep-research.v1';
+    const DR_MESSAGES = Object.freeze({
+        exportRequest: 'ume:dr:export-request',
+        exportResponse: 'ume:dr:export-response',
+        pickerStart: 'ume:dr:picker-start',
+        pickerStop: 'ume:dr:picker-stop',
+        pickerResult: 'ume:dr:picker-result',
+        presentAck: 'ume:dr:present-ack'
+    });
     const HOSTNAME = location.hostname;
-    const IS_DR_IFRAME = HOSTNAME.includes('web-sandbox.oaiusercontent.com');
+    const IS_DR_SANDBOX_HOST = HOSTNAME.includes('web-sandbox.oaiusercontent.com');
+    const IS_EMBEDDED_DR_FRAME = IS_DR_SANDBOX_HOST && window.top !== window;
+    const IS_TOP_LEVEL_DR_PAGE = IS_DR_SANDBOX_HOST && window.top === window;
     const IS_CHATGPT = HOSTNAME === 'chatgpt.com' || HOSTNAME === 'chat.openai.com';
     const IS_GEMINI = HOSTNAME === 'gemini.google.com';
+    const IS_TOP_CONTEXT = window.top === window;
+    const RUNTIME_ATTR = 'data-universal-markdown-exporter-runtime';
+
+    if (document.documentElement && document.documentElement.hasAttribute(RUNTIME_ATTR)) return;
+    if (document.documentElement) document.documentElement.setAttribute(RUNTIME_ATTR, SCRIPT_VERSION);
 
     // =====================================================================
     // TRUSTED-TYPES SAFE GM WRAPPERS
@@ -95,56 +112,127 @@
 
     // =====================================================================
     // IFRAME BRIDGE (inside web-sandbox)
+    // Data-only bridge: embedded frames never open a second export modal.
     // =====================================================================
-    if (IS_DR_IFRAME) { initBridge(); }
+    if (IS_DR_SANDBOX_HOST) initBridge();
+
+    function makeRequestId(prefix) {
+        const random = (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function')
+            ? globalThis.crypto.randomUUID()
+            : Math.random().toString(36).slice(2) + Date.now().toString(36);
+        return String(prefix || 'req') + ':' + random;
+    }
+
+    function safeHttpUrl(value) {
+        if (!value) return '';
+        try {
+            const u = new URL(String(value), location.href);
+            return /^https?:$/.test(u.protocol) ? u.toString() : '';
+        } catch (_) {
+            return '';
+        }
+    }
+
+    function currentSourceUrl(override) {
+        const explicit = safeHttpUrl(override);
+        if (explicit) return explicit;
+        if (IS_EMBEDDED_DR_FRAME) {
+            const ref = safeHttpUrl(document.referrer);
+            if (ref) return ref;
+        }
+        return location.href;
+    }
+
+    function postToSource(source, origin, data) {
+        if (!source || typeof source.postMessage !== 'function') return false;
+        try {
+            source.postMessage(data, origin && origin !== 'null' ? origin : '*');
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+
     function initBridge() {
+        const jobs = new Map();
+
         function hasContent() {
             const doc = getDeepResearchContentDocument(document);
             return !!(doc && doc.body && doc.body.textContent.trim().length > 200);
         }
 
-        function waitForContent() {
-            return new Promise(r => {
-                if (hasContent()) { r(); return; }
-                const iv = setInterval(() => { if (hasContent()) { clearInterval(iv); r(); } }, 500);
-                setTimeout(() => { clearInterval(iv); r(); }, 20000);
+        function waitForContent(timeoutMs) {
+            const timeout = timeoutMs || 20000;
+            return new Promise(resolve => {
+                if (hasContent()) { resolve(true); return; }
+                let done = false;
+                const finish = value => {
+                    if (done) return;
+                    done = true;
+                    clearInterval(iv);
+                    clearTimeout(to);
+                    resolve(value);
+                };
+                const iv = setInterval(() => { if (hasContent()) finish(true); }, 250);
+                const to = setTimeout(() => finish(hasContent()), timeout);
             });
         }
 
-        waitForContent().then(() => {
-            window.addEventListener('message', async ev => {
-                if (!ev.data || ev.data.type !== 'h2m-req') return;
-                const req = ev.data || {};
-                const pref = {
-                    cs: req.cs || 'parenthesized',
-                    incCitations: typeof req.incCitations === 'boolean' ? req.incCitations : !!req.incSources,
-                    incScanned: typeof req.incScanned === 'boolean' ? req.incScanned : !!req.incSources,
-                    incActivity: typeof req.incActivity === 'boolean' ? req.incActivity : false
-                };
-                cit.reset();
-                const doc = getDeepResearchContentDocument(document);
-                const sections = await collectDeepResearchSections(doc, pref, { expand: true });
-                const cd = {}; for (const [n, d2] of cit.r) cd[n] = d2;
-                const extras = {
-                    citations: sections && sections.citations ? sections.citations : null,
-                    scanned: sections && sections.scanned ? sections.scanned : null,
-                    connectorScanned: sections && sections.connectorScanned ? sections.connectorScanned : null,
-                    activity: sections && sections.activity ? sections.activity : null
-                };
-                window.parent.postMessage({
-                    type: 'h2m-res',
-                    md: sections && sections.report ? sections.report : '',
-                    t: sections && sections.title ? sections.title : (extractDRTitleFromDoc(doc) || ''),
-                    c: cd,
-                    sources: {
-                        citations: extras.citations,
-                        scanned: extras.scanned,
-                        connectorScanned: extras.connectorScanned
-                    },
-                    activity: extras.activity,
-                    extras
-                }, '*');
-            });
+        async function buildResponse(req) {
+            await waitForContent(20000);
+            const pref = {
+                cs: req.cs || 'parenthesized',
+                incCitations: typeof req.incCitations === 'boolean' ? req.incCitations : !!req.incSources,
+                incScanned: typeof req.incScanned === 'boolean' ? req.incScanned : !!req.incSources,
+                incActivity: typeof req.incActivity === 'boolean' ? req.incActivity : false
+            };
+            cit.reset();
+            const doc = getDeepResearchContentDocument(document);
+            const sections = await collectDeepResearchSections(doc, pref, { expand: true });
+            const cd = {};
+            for (const [n, d2] of cit.r) cd[n] = d2;
+            const extras = {
+                citations: sections && sections.citations ? sections.citations : null,
+                scanned: sections && sections.scanned ? sections.scanned : null,
+                connectorScanned: sections && sections.connectorScanned ? sections.connectorScanned : null,
+                activity: sections && sections.activity ? sections.activity : null
+            };
+            return {
+                protocol: DR_PROTOCOL,
+                type: DR_MESSAGES.exportResponse,
+                requestId: req.requestId || '',
+                sourceUrl: currentSourceUrl(req.sourceUrl),
+                md: sections && sections.report ? sections.report : '',
+                t: sections && sections.title ? sections.title : (extractDRTitleFromDoc(doc) || ''),
+                c: cd,
+                sources: {
+                    citations: extras.citations,
+                    scanned: extras.scanned,
+                    connectorScanned: extras.connectorScanned
+                },
+                activity: extras.activity,
+                extras
+            };
+        }
+
+        window.addEventListener('message', async ev => {
+            const req = ev.data || {};
+            const modern = req.protocol === DR_PROTOCOL && req.type === DR_MESSAGES.exportRequest;
+            const legacy = req.type === 'h2m-req';
+            if (!modern && !legacy) return;
+            if (IS_EMBEDDED_DR_FRAME && ev.source !== window.parent) return;
+            if (!IS_EMBEDDED_DR_FRAME && ev.source !== window) return;
+
+            const requestId = req.requestId || makeRequestId('legacy-export');
+            let job = jobs.get(requestId);
+            if (!job) {
+                job = buildResponse({ ...req, requestId });
+                jobs.set(requestId, job);
+                setTimeout(() => jobs.delete(requestId), 30000);
+            }
+            const response = await job;
+            const payload = legacy ? { ...response, type: 'h2m-res' } : response;
+            postToSource(ev.source, ev.origin, payload);
         });
     }
 
@@ -261,176 +349,8 @@
     }
 
     // =====================================================================
-    // CHATGPT DEEP RESEARCH PANEL EXTRACTORS
-    // These work on the SAME-ORIGIN overlay DOM (not iframe)
+    // CHATGPT DEEP RESEARCH EXTRACTION HELPERS
     // =====================================================================
-
-    function extractDRReport() {
-        const page = document.querySelector('[class*="_reportPage_"]')
-            || document.querySelector('[class*="_reportContainer_"]');
-        if (page) { cit.reset(); return h2m(page, gP().cs, fiberCites(document)); }
-        const turns = document.querySelectorAll('article[data-testid^="conversation-turn"]');
-        if (turns.length) {
-            const last = turns[turns.length - 1];
-            const prose = last.querySelector('div.markdown, div.prose');
-            if (prose && prose.textContent.trim().length > 200) {
-                cit.reset();
-                return h2m(prose, gP().cs, fiberCites(document));
-            }
-        }
-        return null;
-    }
-
-    function extractDRDuration() {
-        const el2 = document.querySelector('.text-token-text-secondary.mb-3.text-sm');
-        if (!el2) return null;
-        const raw = el2.textContent.trim();
-        const m = raw.match(/Research completed in\s+(\S+)/);
-        const ariaSpan = el2.querySelector('span[role="img"][aria-label]');
-        const citNum = ariaSpan ? ariaSpan.getAttribute('aria-label') : null;
-        const searchSpans = el2.querySelectorAll('span[role="img"][aria-label]');
-        let searchNum = null;
-        if (searchSpans.length > 1) searchNum = searchSpans[1].getAttribute('aria-label');
-        let line = 'Research completed';
-        if (m) line += ` in ${m[1]}`;
-        if (citNum) line += ` \u00B7 ${citNum} citations`;
-        if (searchNum) line += ` \u00B7 ${searchNum} searches`;
-        return line;
-    }
-
-    function extractDRCitations() {
-        const sec = document.querySelector('section[aria-labelledby="report-references-citations"]');
-        if (!sec) return null;
-        const header = sec.querySelector('#report-references-citations');
-        const countMatch = header ? header.textContent.match(/(\d+)/) : null;
-        const count = countMatch ? countMatch[1] : '?';
-        let md = `## **Citations [\`${count}\` Sources]**\n\n`;
-        let idx = 1;
-        const citGroups = sec.querySelectorAll('div.flex.flex-col.gap-0');
-        for (const group of citGroups) {
-            const buttons = group.querySelectorAll('button[aria-label^="Open source"]');
-            for (const btn of buttons) {
-                const titleLink = btn.querySelector('a.text-token-text-primary');
-                const anyLink = btn.querySelector('a[href]');
-                const title = titleLink ? titleLink.textContent.trim() : (anyLink ? anyLink.textContent.trim() : `Source ${idx}`);
-                const href = anyLink ? stripUtm(anyLink.getAttribute('href')) : '';
-                md += `${idx}. [${title}](${href})\n`;
-                idx++;
-            }
-        }
-        if (idx === 1) {
-            const buttons = sec.querySelectorAll('button[aria-label^="Open source"]');
-            for (const btn of buttons) {
-                const titleLink = btn.querySelector('a.text-token-text-primary');
-                const anyLink = btn.querySelector('a[href]');
-                const title = titleLink ? titleLink.textContent.trim() : (anyLink ? anyLink.textContent.trim() : `Source ${idx}`);
-                const href = anyLink ? stripUtm(anyLink.getAttribute('href')) : '';
-                md += `${idx}. [${title}](${href})\n`;
-                idx++;
-            }
-        }
-        return md.trim();
-    }
-
-    function extractDRScanned() {
-        const sec = document.querySelector('section[aria-labelledby="report-references-sources-scanned"]');
-        if (!sec) return null;
-        const header = sec.querySelector('#report-references-sources-scanned');
-        const countMatch = header ? header.textContent.match(/(\d+)/) : null;
-        const count = countMatch ? countMatch[1] : '?';
-        let md = `## **Scanned [\`${count}\` Sources]**\n\n`;
-        const outerContainer = sec.querySelector('.flex.w-full.flex-col');
-        if (!outerContainer) return md.trim();
-        const domainGroups = outerContainer.querySelectorAll(':scope > .flex.flex-col.gap-4');
-        let idx = 1;
-        for (const group of domainGroups) {
-            const domainLink = group.querySelector('.flex.items-center.justify-between a[href]');
-            const domainHref = domainLink ? stripUtm(domainLink.getAttribute('href')) : '';
-            const domainName = domainLink ? (domainLink.querySelector('span') || domainLink).textContent.trim() : '';
-            const itemContainers = group.querySelectorAll('.flex.flex-col.gap-1');
-            for (const itemC of itemContainers) {
-                const titleP = itemC.querySelector('p.text-token-text-primary');
-                if (!titleP) continue;
-                const title = titleP.textContent.trim();
-                const scannedBtn = itemC.querySelector('button[aria-label^="Open scanned source"]');
-                const snippetSpan = scannedBtn ? scannedBtn.querySelector('span.text-token-text-secondary') : null;
-                const snippet = snippetSpan ? snippetSpan.textContent.trim() : '';
-                md += `${idx}. [${title}](${domainHref})\n`;
-                if (snippet) {
-                    const trimmed = snippet.length > 200 ? snippet.substring(0, 200) + '...' : snippet;
-                    md += `   - ${trimmed}\n`;
-                }
-                idx++;
-            }
-        }
-        return md.trim();
-    }
-
-    function extractDRActivity() {
-        const sec = document.querySelector('section[aria-labelledby="report-activity-title"]');
-        if (!sec) return null;
-        const dur = extractDRDuration();
-        const durText = dur ? (dur.match(/in\s+(\S+)/)?.[1] || '?') : '?';
-        let md = `## **Research Activity [Research completed in \`${durText}\`]**\n\n`;
-        let entries = sec.querySelectorAll('.space-y-4.py-1 > .flex.items-stretch.gap-1, .space-y-4 > .flex.items-stretch.gap-1');
-        if (!entries.length) entries = sec.querySelectorAll('.flex.items-stretch.gap-1');
-        let idx = 1;
-        for (const entry of entries) {
-            const flex1 = entry.querySelector('.flex-1');
-            if (!flex1) continue;
-            const titleDiv = flex1.querySelector('.text-token-text-primary');
-            if (!titleDiv) continue;
-            const title = titleDiv.textContent.trim();
-            if (!title) continue;
-            const isSearchEntry = /^Searching\b/.test(title);
-            const linkContainer = flex1.querySelector('.mt-1');
-            const bodyContainer = flex1.querySelector('.text-token-text-secondary.mt-2');
-            if (isSearchEntry && linkContainer) {
-                const links = linkContainer.querySelectorAll('a[href]');
-                if (links.length > 0) {
-                    md += `${idx}. **${title}**\n`;
-                    let li = 1;
-                    for (const a of links) {
-                        const href = stripUtm(a.getAttribute('href'));
-                        let text = a.textContent.trim();
-                        const img = a.querySelector('img');
-                        if (img) text = text.replace(img.textContent || '', '').trim();
-                        text = text.replace(/^(https?:\/\/)?(www\.)?/, '');
-                        if (!text) text = href;
-                        md += `   ${li}. [${text}](${href})\n`;
-                        li++;
-                    }
-                    idx++;
-                    continue;
-                }
-            }
-            md += `${idx}. **${title}**\n`;
-            if (bodyContainer) {
-                const bodyPs = bodyContainer.querySelectorAll('p');
-                if (bodyPs.length > 0) {
-                    let si = 1;
-                    for (const bp of bodyPs) {
-                        const bodyText = bp.textContent.trim();
-                        if (bodyText) {
-                            const trimmed = bodyText.length > 300 ? bodyText.substring(0, 300) + '...' : bodyText;
-                            md += `   ${si}. ${trimmed}\n`;
-                            si++;
-                        }
-                    }
-                } else {
-                    const bodyText = bodyContainer.textContent.trim();
-                    if (bodyText) {
-                        const trimmed = bodyText.length > 300 ? bodyText.substring(0, 300) + '...' : bodyText;
-                        md += `   1. ${trimmed}\n`;
-                    }
-                }
-            }
-            idx++;
-        }
-        return md.trim();
-    }
-
-
 
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
     function textCompact(s) { return String(s || '').replace(/\s+/g, ' ').trim(); }
@@ -495,19 +415,83 @@
 
     function isDeepResearchIframeEl(frame) {
         if (!frame || frame.tagName !== 'IFRAME') return false;
-        const s = frame.getAttribute('src') || '', t = frame.getAttribute('title') || '';
-        return s.includes('web-sandbox.oaiusercontent.com') || s.includes('connector_openai_deep_research') || t.toLowerCase().includes('deep-research');
+        const src = frame.getAttribute('src') || '';
+        const title = (frame.getAttribute('title') || '').toLowerCase();
+        return src.includes('web-sandbox.oaiusercontent.com')
+            || src.includes('connector_openai_deep_research')
+            || title.includes('deep-research')
+            || title.includes('deep research');
     }
 
-    function postMessageToDeepResearchIframes(msg) {
-        for (const f of document.querySelectorAll('iframe')) {
-            if (!isDeepResearchIframeEl(f)) continue;
-            try { if (f.contentWindow) f.contentWindow.postMessage(msg, '*'); } catch (_) {}
+    function isElementVisible(el2) {
+        if (!el2 || !el2.isConnected) return false;
+        if (el2.hidden || el2.closest('[hidden], [inert], [aria-hidden="true"]')) return false;
+        let rect;
+        try { rect = el2.getBoundingClientRect(); } catch (_) { return false; }
+        if (!rect || rect.width <= 1 || rect.height <= 1) return false;
+        try {
+            const cs = (el2.ownerDocument.defaultView || window).getComputedStyle(el2);
+            if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) === 0) return false;
+        } catch (_) {}
+        return true;
+    }
+
+    function frameVisibleArea(frame) {
+        if (!isElementVisible(frame)) return 0;
+        let r;
+        try { r = frame.getBoundingClientRect(); } catch (_) { return 0; }
+        const doc = frame.ownerDocument || document;
+        const win = doc.defaultView || window;
+        const vw = Math.max(1, win.innerWidth || doc.documentElement.clientWidth || 1);
+        const vh = Math.max(1, win.innerHeight || doc.documentElement.clientHeight || 1);
+        const width = Math.max(0, Math.min(r.right, vw) - Math.max(r.left, 0));
+        const height = Math.max(0, Math.min(r.bottom, vh) - Math.max(r.top, 0));
+        return width * height;
+    }
+
+    function getDRIframes(doc) {
+        const d = doc || document;
+        return [...d.querySelectorAll('iframe')].filter(isDeepResearchIframeEl);
+    }
+
+    function scoreDRIframe(frame) {
+        if (!frame) return -Infinity;
+        const area = frameVisibleArea(frame);
+        let score = area > 0 ? 1000 + Math.min(1000, area / 1000) : -5000;
+        const title = (frame.getAttribute('title') || '').toLowerCase();
+        const src = frame.getAttribute('src') || '';
+        if (title.includes('deep-research') || title.includes('deep research')) score += 350;
+        if (src.includes('web-sandbox.oaiusercontent.com')) score += 250;
+        if (frame.closest('[role="dialog"], [aria-modal="true"], [class*="report"], [class*="Report"]')) score += 180;
+        if (frame === activePickerFrame) score += 500;
+        return score;
+    }
+
+    function getDRIframe(doc) {
+        const frames = getDRIframes(doc || document);
+        frames.sort((a, b) => scoreDRIframe(b) - scoreDRIframe(a));
+        return frames[0] || null;
+    }
+
+    function frameForWindow(sourceWindow) {
+        if (!sourceWindow) return null;
+        return getDRIframes(document).find(frame => {
+            try { return frame.contentWindow === sourceWindow; } catch (_) { return false; }
+        }) || null;
+    }
+
+    function postToFrame(frame, message) {
+        if (!frame || !frame.contentWindow) return false;
+        try {
+            frame.contentWindow.postMessage(message, '*');
+            return true;
+        } catch (_) {
+            return false;
         }
     }
 
     function removeOpenH2mModals() {
-        for (const n of document.querySelectorAll('.h2m-overlay')) {
+        for (const n of document.querySelectorAll('.h2m-overlay[data-h2m-kind="export"], #h2m-export-overlay')) {
             try { n.remove(); } catch (_) {}
         }
     }
@@ -521,20 +505,28 @@
         const d = doc || document;
         if (hasDRPanelSections(d) || d.querySelector('[role="tablist"] [role="tab"]')) return true;
 
-        const iconButtons = [...d.querySelectorAll('button, [role="button"]')].filter(b => {
-            if (!b || b.disabled) return false;
-            const txt = textCompact(b.textContent || '').toLowerCase();
-            const aria = textCompact((b.getAttribute('aria-label') || b.getAttribute('title') || '')).toLowerCase();
-            if (/close|dismiss|minimize|maximize/.test(txt) || /close|dismiss|minimize|maximize/.test(aria)) return false;
-            if (/sources|activity|citations|research/.test(txt) || /sources|activity|citations|research/.test(aria)) return true;
-            const hasIconOnly = !txt && !!b.querySelector('svg, img, [role="img"]');
-            if (!hasIconOnly) return false;
-            return !!b.closest('header, [class*="report"], [class*="toolbar"], [class*="top"], [class*="sticky"]');
-        });
+        const selectors = [
+            'button[aria-label="Sources and activity"]',
+            '[role="button"][aria-label="Sources and activity"]',
+            'button[aria-label*="Sources and activity" i]',
+            '[role="button"][aria-label*="Sources and activity" i]'
+        ];
+        const candidates = [];
+        for (const selector of selectors) {
+            for (const control of d.querySelectorAll(selector)) {
+                if (!control || control.disabled || candidates.includes(control)) continue;
+                candidates.push(control);
+            }
+        }
+        candidates.sort((a, b) => Number(isElementVisible(b)) - Number(isElementVisible(a)));
 
-        for (const b of iconButtons) {
-            try { b.click(); } catch (_) {}
-            await sleep(140);
+        for (const control of candidates) {
+            if (control.getAttribute('aria-expanded') === 'true' || control.getAttribute('aria-pressed') === 'true') {
+                await sleep(120);
+                if (hasDRPanelSections(d) || d.querySelector('[role="tablist"] [role="tab"]')) return true;
+            }
+            try { control.click(); } catch (_) {}
+            await sleep(180);
             if (hasDRPanelSections(d) || d.querySelector('[role="tablist"] [role="tab"]')) return true;
         }
         return false;
@@ -1071,11 +1063,6 @@
         return out;
     }
 
-    function extractDRReport(doc) { return extractDRReportFromDoc(doc || document, { cs: gP().cs }); }
-    function extractDRDuration(doc) { return extractDRDurationFromDoc(doc || document); }
-    function extractDRCitations(doc) { return extractDRCitationsFromDoc(doc || document); }
-    function extractDRScanned(doc) { return extractDRScannedFromDoc(doc || document, 'scanned'); }
-    function extractDRActivity(doc) { return extractDRActivityFromDoc(doc || document); }
     // =====================================================================
     // GEMINI EXTRACTION
     // =====================================================================
@@ -1205,67 +1192,50 @@
         if (document.querySelector('[class*="_reportPage_"]')) return true;
         if (document.querySelector('[class*="_reportContainer_"]')) return true;
         if (document.querySelectorAll('section[aria-labelledby^="report-"]').length > 0) return true;
-        if (hasDRIframe()) return true;
-        return false;
+        return hasDRIframe();
     }
+
     function hasDRIframe() {
-        if (document.querySelector('iframe[title*="deep-research"]')) return true;
-        if (document.querySelector('iframe[src*="web-sandbox.oaiusercontent.com"]')) return true;
-        if (document.querySelector('iframe[src*="connector_openai_deep_research"]')) return true;
-        return false;
-    }
-    function getDRIframe() {
-        return document.querySelector('iframe[title*="deep-research"]')
-            || document.querySelector('iframe[src*="web-sandbox.oaiusercontent.com"]')
-            || document.querySelector('iframe[src*="connector_openai_deep_research"]');
+        return getDRIframes(document).length > 0;
     }
 
-    function getDROverlayContainer() {
-        const iframe = getDRIframe();
-        if (!iframe) return null;
-        let el2 = iframe.parentElement;
-        while (el2 && el2 !== document.body) {
-            try {
-                const cs = window.getComputedStyle(el2);
-                if ((cs.position === 'fixed' || cs.position === 'absolute') && cs.zIndex && parseInt(cs.zIndex) > 10) return el2;
-            } catch (_) {}
-            el2 = el2.parentElement;
-        }
-        return iframe.parentElement;
-    }
-
-    function isDRElement(el2) {
-        if (!el2) return false;
-        if (el2.tagName === 'IFRAME') {
-            const t = el2.getAttribute('title') || '', s = el2.getAttribute('src') || '';
-            if (t.includes('deep-research') || s.includes('web-sandbox.oaiusercontent.com') || s.includes('connector_openai_deep_research')) return true;
-        }
-        if (!el2.closest) return false;
-        if (el2.closest('section[aria-labelledby^="report-"]')) return true;
-        if (el2.closest('[class*="_reportPage_"]')) return true;
-        if (el2.closest('[class*="_reportContainer_"]')) return true;
-        const overlay = getDROverlayContainer();
-        if (overlay && overlay.contains(el2)) return true;
-        return false;
-    }
-
-    function exportViaIframe() {
+    function exportViaIframe(frame) {
         return new Promise(resolve => {
-            const iframe = getDRIframe();
-            if (!iframe) { resolve(null); return; }
-            let done = false;
+            const iframe = frame || getDRIframe();
+            if (!iframe || !iframe.contentWindow) { resolve(null); return; }
+            const sourceWindow = iframe.contentWindow;
+            const requestId = makeRequestId('export');
             const pr = gP();
+            let done = false;
+            const timers = [];
+
+            const finish = value => {
+                if (done) return;
+                done = true;
+                window.removeEventListener('message', onMsg);
+                for (const timer of timers) clearTimeout(timer);
+                resolve(value);
+            };
+
             function onMsg(ev) {
-                if (done || !ev.data || ev.data.type !== 'h2m-res') return;
-                done = true; window.removeEventListener('message', onMsg);
-                const { md, t, c, sources, activity, extras } = ev.data;
+                const data = ev.data || {};
+                if (done || ev.source !== sourceWindow) return;
+                if (data.protocol !== DR_PROTOCOL || data.type !== DR_MESSAGES.exportResponse || data.requestId !== requestId) return;
+                const { md, t, c, sources, activity, extras, sourceUrl } = data;
                 cit.reset();
-                if (c) for (const [ns, d] of Object.entries(c)) { const n = parseInt(ns, 10); cit.m.set(d.k, n); cit.r.set(n, d); if (n >= cit.n) cit.n = n + 1; }
+                if (c) for (const [ns, d] of Object.entries(c)) {
+                    const n = parseInt(ns, 10);
+                    if (!d || !Number.isFinite(n)) continue;
+                    cit.m.set(d.k, n);
+                    cit.r.set(n, d);
+                    if (n >= cit.n) cit.n = n + 1;
+                }
                 const srcObj = sources && typeof sources === 'object' ? sources : null;
                 const ex = extras && typeof extras === 'object' ? extras : {};
-                resolve({
+                finish({
                     md: md || '',
                     t: t || '',
+                    sourceUrl: currentSourceUrl(sourceUrl || location.href),
                     sources: srcObj || sources || null,
                     activity: typeof activity === 'string' ? activity : null,
                     extras: {
@@ -1276,40 +1246,52 @@
                     }
                 });
             }
-            window.addEventListener('message', onMsg);
+
             const msg = {
-                type: 'h2m-req',
+                protocol: DR_PROTOCOL,
+                type: DR_MESSAGES.exportRequest,
+                requestId,
+                sourceUrl: location.href,
                 cs: pr.cs,
                 incCitations: pr.incCite,
                 incScanned: pr.incScan,
                 incActivity: pr.incAct,
                 incSources: pr.incCite || pr.incScan
             };
-            function sendMsg() {
-                postMessageToDeepResearchIframes(msg);
-            }
-            sendMsg();
-            setTimeout(() => { if (!done) sendMsg(); }, 2000);
-            setTimeout(() => { if (!done) sendMsg(); }, 5000);
-            setTimeout(() => { if (!done) sendMsg(); }, 10000);
-            setTimeout(() => { if (!done) { done = true; window.removeEventListener('message', onMsg); resolve(null); } }, 25000);
+            const send = () => { if (!done) postToFrame(iframe, msg); };
+
+            window.addEventListener('message', onMsg);
+            send();
+            timers.push(setTimeout(send, 1200));
+            timers.push(setTimeout(send, 3200));
+            timers.push(setTimeout(send, 7000));
+            timers.push(setTimeout(() => finish(null), 20000));
         });
     }
 
-    function fmtOut(content, title) {
+    function fmtOut(content, title, sourceUrl) {
         const pr = gP();
         let md = '';
-        const srcUrl = IS_DR_IFRAME ? (document.referrer || location.href) : location.href;
-        if (pr.fm) { const t = (title || document.title || document.querySelector('h1')?.textContent || 'Export').replace(/"/g, '\\"'); md += `---\ntitle: "${t}"\ndate: ${new Date().toISOString().split('T')[0]}\nsource: ${srcUrl}\n---\n\n`; }
+        const srcUrl = currentSourceUrl(sourceUrl);
+        if (pr.fm) {
+            const t = (title || document.title || document.querySelector('h1')?.textContent || 'Export').replace(/"/g, '\\"');
+            md += `---\ntitle: "${t}"\ndate: ${new Date().toISOString().split('T')[0]}\nsource: ${srcUrl}\n---\n\n`;
+        }
         if (pr.t1 && title) md += `# ${title}\n\n`;
         md += content;
-        if (pr.cs === 'endnotes' && cit.r.size > 0) { md += '\n\n---\n\n### Sources\n\n'; for (const [n, { href }] of cit.r) md += `[${n}] ${href}\n`; }
-        if (pr.cs === 'footnotes' && cit.r.size > 0) { md += '\n\n'; for (const [n, { href }] of cit.r) md += `[^${n}]: ${href}\n`; }
+        if (pr.cs === 'endnotes' && cit.r.size > 0) {
+            md += '\n\n---\n\n### Sources\n\n';
+            for (const [n, { href }] of cit.r) md += `[${n}] ${href}\n`;
+        }
+        if (pr.cs === 'footnotes' && cit.r.size > 0) {
+            md += '\n\n';
+            for (const [n, { href }] of cit.r) md += `[^${n}]: ${href}\n`;
+        }
         return md.trim();
     }
 
-    async function tryDirectIframeAccess() {
-        const iframe = getDRIframe();
+    async function tryDirectIframeAccess(frame) {
+        const iframe = frame || getDRIframe();
         if (!iframe) return null;
         try {
             let idoc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
@@ -1326,6 +1308,7 @@
             return {
                 md: sections.report || '',
                 t: sections.title || '',
+                sourceUrl: location.href,
                 extras: {
                     citations: sections.citations || null,
                     scanned: sections.scanned || null,
@@ -1341,11 +1324,19 @@
     function iframeFindDoc() {
         return getDeepResearchContentDocument(document);
     }
-    function iframeFindRoot() {
-        return findDRReportRoot(iframeFindDoc());
+
+    let autoExportJob = null;
+
+    function autoExportDR() {
+        if (autoExportJob) {
+            toast('Deep Research export is already running.', 1800);
+            return autoExportJob;
+        }
+        autoExportJob = runAutoExportDR().finally(() => { autoExportJob = null; });
+        return autoExportJob;
     }
 
-    async function autoExportDR() {
+    async function runAutoExportDR() {
         toast('Extracting Deep Research...', 6000);
         const pr = gP();
         const pref = {
@@ -1354,10 +1345,11 @@
             incScanned: pr.incScan,
             incActivity: pr.incAct
         };
-        let parts = [];
+        const parts = [];
         let title = '';
+        let sourceUrl = currentSourceUrl();
 
-        if (IS_DR_IFRAME) {
+        if (IS_DR_SANDBOX_HOST) {
             const sections = await collectDeepResearchSections(iframeFindDoc(), pref, { expand: true });
             if (sections) {
                 appendDRSectionsToParts(parts, sections, pr);
@@ -1365,19 +1357,22 @@
             }
         }
 
-        if (!parts.length && !IS_DR_IFRAME && hasDRIframe()) {
-            sendToAllIframes({ type: 'h2m-auto-export' });
-            const result = await exportViaIframe();
+        if (!parts.length && !IS_DR_SANDBOX_HOST && hasDRIframe()) {
+            const iframe = getDRIframe();
+            const result = await exportViaIframe(iframe);
             if (result && result.md && result.md.trim()) {
                 parts.push(result.md.trim());
                 title = result.t || title;
+                sourceUrl = currentSourceUrl(result.sourceUrl || location.href);
                 const bridge = extractBridgeSections(result);
                 if (pr.incCite && bridge.citations) parts.push(bridge.citations.trim());
                 if (pr.incScan && bridge.scanned) parts.push(bridge.scanned.trim());
                 if (pr.incScan && bridge.connectorScanned) parts.push(bridge.connectorScanned.trim());
                 if (pr.incAct && bridge.activity) parts.push(bridge.activity.trim());
 
-                const missingPanelData = (pr.incCite && !bridge.citations) || (pr.incScan && !bridge.scanned && !bridge.connectorScanned) || (pr.incAct && !bridge.activity);
+                const missingPanelData = (pr.incCite && !bridge.citations)
+                    || (pr.incScan && !bridge.scanned && !bridge.connectorScanned)
+                    || (pr.incAct && !bridge.activity);
                 if (missingPanelData) {
                     const panelSections = await collectDeepResearchSections(document, pref, { expand: true, allowSrcdocFallback: false });
                     if (panelSections) {
@@ -1389,10 +1384,11 @@
                 }
             }
             if (!parts.length) {
-                const direct = await tryDirectIframeAccess();
+                const direct = await tryDirectIframeAccess(iframe);
                 if (direct && direct.md && direct.md.trim()) {
                     parts.push(direct.md.trim());
                     title = direct.t || title;
+                    sourceUrl = currentSourceUrl(direct.sourceUrl || location.href);
                     const bridge = extractBridgeSections(direct);
                     if (pr.incCite && bridge.citations) parts.push(bridge.citations.trim());
                     if (pr.incScan && bridge.scanned) parts.push(bridge.scanned.trim());
@@ -1402,7 +1398,7 @@
             }
         }
 
-        if (!parts.length && !IS_DR_IFRAME && hasDROverlay()) {
+        if (!parts.length && !IS_DR_SANDBOX_HOST && hasDROverlay()) {
             const sections = await collectDeepResearchSections(document, pref, { expand: true });
             if (sections) {
                 appendDRSectionsToParts(parts, sections, pr);
@@ -1410,7 +1406,7 @@
             }
         }
 
-        if (!parts.length && !IS_DR_IFRAME) {
+        if (!parts.length && !IS_DR_SANDBOX_HOST) {
             const srcdocDoc = findBestSrcdocDocument(document);
             if (srcdocDoc) {
                 const sections = await collectDeepResearchSections(srcdocDoc, pref, { expand: false, allowSrcdocFallback: false });
@@ -1426,11 +1422,10 @@
             for (let i = turns.length - 1; i >= 0 && !parts.length; i--) {
                 const divs = turns[i].querySelectorAll('div.markdown, div.prose, [class*="markdown"], [class*="prose"]');
                 for (const d of divs) {
-                    if (d.textContent.trim().length > 100) {
-                        cit.reset();
-                        const md = h2m(d, pr.cs, fiberCites(document));
-                        if (md.trim()) parts.push(md.trim());
-                    }
+                    if (d.textContent.trim().length <= 100) continue;
+                    cit.reset();
+                    const md = h2m(d, pr.cs, fiberCites(document));
+                    if (md.trim()) parts.push(md.trim());
                 }
             }
         }
@@ -1440,27 +1435,52 @@
             if (gemini) parts.push(gemini);
         }
 
-        if (!title) title = document.querySelector('h1')?.textContent?.trim() || document.querySelector('h2')?.textContent?.trim() || document.title.replace(/ | ChatGPT$/, '').trim();
+        if (!title) title = document.querySelector('h1')?.textContent?.trim()
+            || document.querySelector('h2')?.textContent?.trim()
+            || document.title.replace(/ | ChatGPT$/, '').trim();
 
         if (parts.length) {
-            showModal(fmtOut(parts.join('\n\n---\n\n'), title), { drToolbar: true });
-        } else if (!IS_DR_IFRAME && hasDRIframe()) {
-            toast('Export triggered inside iframe. If no modal appears, click into the iframe and press Ctrl+M then R.', 5000);
+            presentMarkdown(fmtOut(parts.join('\n\n---\n\n'), title, sourceUrl), { drToolbar: true });
         } else {
-            toast('No content found. Try clicking into the iframe first, then Ctrl+M to activate picker.', 5000);
+            toast('No content found. Open the report, then press Ctrl+M and R again.', 5000);
         }
     }
 
     // =====================================================================
     // PREVIEW MODAL (DOM-built, Trusted-Types safe)
     // =====================================================================
+    const pendingPresentAcks = new Map();
+
+    function presentMarkdown(markdown, options) {
+        if (!IS_EMBEDDED_DR_FRAME || window.parent === window) {
+            showModal(markdown, options);
+            return;
+        }
+        const requestId = makeRequestId('present');
+        const message = {
+            protocol: DR_PROTOCOL,
+            type: DR_MESSAGES.pickerResult,
+            requestId,
+            pickerSessionId: pickerSessionId || '',
+            markdown,
+            options: options || {}
+        };
+        let acknowledged = false;
+        pendingPresentAcks.set(requestId, () => { acknowledged = true; });
+        postToSource(window.parent, pickerParentOrigin, message);
+        setTimeout(() => {
+            pendingPresentAcks.delete(requestId);
+            if (!acknowledged) showModal(markdown, options);
+        }, 700);
+    }
+
     function showModal(markdown, options) {
         removeOpenH2mModals();
         const opt = options || {};
-        const showDROpts = opt.drToolbar !== undefined ? opt.drToolbar : (IS_CHATGPT || IS_GEMINI || IS_DR_IFRAME || hasDROverlay() || hasDRIframe());
+        const showDROpts = opt.drToolbar !== undefined ? opt.drToolbar : (IS_CHATGPT || IS_GEMINI || IS_DR_SANDBOX_HOST || hasDROverlay() || hasDRIframe());
         const pr = gP();
         const cOpts = [{ v: 'parenthesized', l: 'Parenthesized' }, { v: 'inline', l: 'Inline' }, { v: 'endnotes', l: 'Endnotes' }, { v: 'footnotes', l: 'Footnotes' }, { v: 'named', l: 'Named' }, { v: 'none', l: 'None' }];
-        const ov = el('div', { className: 'h2m-overlay' });
+        const ov = el('div', { className: 'h2m-overlay', id: 'h2m-export-overlay', 'data-h2m-kind': 'export' });
         const md = el('div', { className: 'h2m-modal', style: { position: 'relative' } });
         const tbL = el('div', { className: 'h2m-toolbar-left' });
         const tbR = el('div', { className: 'h2m-toolbar-right' });
@@ -1545,7 +1565,7 @@
     // OBSIDIAN CONFIG
     // =====================================================================
     function showObsidianCfg() {
-        const ov = el('div', { className: 'h2m-overlay' }), md2 = el('div', { className: 'h2m-modal', style: { height: 'min(400px,70vh)', position: 'relative' } }), tb = el('div', { className: 'h2m-toolbar' }, el('span', { style: { fontWeight: '700', fontSize: '14px' } }, 'Obsidian Config')), bd = el('div', { style: { padding: '16px', overflow: 'auto' } });
+        const ov = el('div', { className: 'h2m-overlay', 'data-h2m-kind': 'config' }), md2 = el('div', { className: 'h2m-modal', style: { height: 'min(400px,70vh)', position: 'relative' } }), tb = el('div', { className: 'h2m-toolbar' }, el('span', { style: { fontWeight: '700', fontSize: '14px' } }, 'Obsidian Config')), bd = el('div', { style: { padding: '16px', overflow: 'auto' } });
         const mk = (l, k) => { const lb = el('div', { style: { fontWeight: '600', fontSize: '13px', color: '#ccc', marginTop: '12px' } }, l), ip = el('input', { type: 'text', style: { width: '100%', padding: '8px', border: '1px solid #555', borderRadius: '6px', background: '#2d2d2d', color: '#d4d4d4', fontSize: '13px', marginTop: '4px', boxSizing: 'border-box' } }); ip.value = _get(k, ''); bd.appendChild(lb); bd.appendChild(ip); return ip; };
         const vi = mk('Vault Name', 'obsidian_vault'), fi = mk('Folder (optional)', 'obsidian_folder');
         const ac = el('div', { style: { padding: '12px', display: 'flex', gap: '8px', justifyContent: 'flex-end', borderTop: '1px solid #3a3a3a' } }), sv = el('button', { className: 'h2m-btn h2m-btn-primary', type: 'button' }, 'Save'), cn = el('button', { className: 'h2m-btn h2m-btn-danger', type: 'button' }, 'Close');
@@ -1558,7 +1578,7 @@
     // =====================================================================
     // GITHUB
     // =====================================================================
-    function showGHCfg() { const ov = el('div', { className: 'h2m-overlay' }), md2 = el('div', { className: 'h2m-modal', style: { height: 'min(520px,80vh)', position: 'relative' } }), tb = el('div', { className: 'h2m-toolbar' }, el('span', { style: { fontWeight: '700', fontSize: '14px' } }, 'GitHub Config')), bd = el('div', { style: { padding: '16px', overflow: 'auto' } });
+    function showGHCfg() { const ov = el('div', { className: 'h2m-overlay', 'data-h2m-kind': 'config' }), md2 = el('div', { className: 'h2m-modal', style: { height: 'min(520px,80vh)', position: 'relative' } }), tb = el('div', { className: 'h2m-toolbar' }, el('span', { style: { fontWeight: '700', fontSize: '14px' } }, 'GitHub Config')), bd = el('div', { style: { padding: '16px', overflow: 'auto' } });
         const mk = (l, t, k) => { const lb = el('div', { style: { fontWeight: '600', fontSize: '13px', color: '#ccc', marginTop: '12px' } }, l), ip = el('input', { type: t, style: { width: '100%', padding: '8px', border: '1px solid #555', borderRadius: '6px', background: '#2d2d2d', color: '#d4d4d4', fontSize: '13px', marginTop: '4px', boxSizing: 'border-box' } }); ip.value = _get(k, ''); bd.appendChild(lb); bd.appendChild(ip); return ip; };
         const ti = mk('Token', 'password', 'github_token'), oi = mk('Owner', 'text', 'OWNER'), ri = mk('Repo', 'text', 'REPO');
         const ac = el('div', { style: { padding: '12px', display: 'flex', gap: '8px', justifyContent: 'flex-end', borderTop: '1px solid #3a3a3a' } }), sv = el('button', { className: 'h2m-btn h2m-btn-primary', type: 'button' }, 'Save'), cn = el('button', { className: 'h2m-btn h2m-btn-danger', type: 'button' }, 'Close');
@@ -1576,12 +1596,17 @@
     let selecting = false, selEl = null, tipEl = null, _raf = null;
     let _lastX = 0, _lastY = 0;
     let _pickerOriginWarnAt = 0;
+    let pickerSessionId = '';
+    let pickerSourceUrl = '';
+    let pickerParentOrigin = '*';
+    let activePickerFrame = null;
+    let activePickerSessionId = '';
+    let activationBlock = null;
+    let lastPointerSelectionAt = 0;
+    let frameShields = [];
+    let frameShieldRaf = null;
     const PICKER_STYLE_ID = 'h2m-picker-style';
     const PICKER_STYLE_CSS = '.h2m-sel{outline:3px dashed #ff2d2d!important;outline-offset:-2px!important;background:rgba(255,30,30,.12)!important;box-shadow:inset 0 0 0 1px rgba(255,0,0,.25)!important;z-index:2147483640!important;position:relative}';
-
-    function sendToAllIframes(msg) {
-        postMessageToDeepResearchIframes(msg);
-    }
 
     function walkSameOriginDocs(baseDoc, fn, depth, seen) {
         const doc = baseDoc || document;
@@ -1619,8 +1644,8 @@
 
     function isUs(n) {
         if (!n || !n.closest) return false;
-        if (n.classList && (n.classList.contains('h2m-overlay') || n.classList.contains('h2m-modal') || n.classList.contains('h2m-tip') || n.classList.contains('h2m-toast'))) return true;
-        return !!(n.closest('.h2m-overlay,.h2m-modal,.h2m-tip,.h2m-toast'));
+        if (n.classList && (n.classList.contains('h2m-overlay') || n.classList.contains('h2m-modal') || n.classList.contains('h2m-tip') || n.classList.contains('h2m-toast') || n.classList.contains('h2m-frame-shield'))) return true;
+        return !!(n.closest('.h2m-overlay,.h2m-modal,.h2m-tip,.h2m-toast,.h2m-frame-shield'));
     }
 
     function showCrossOriginPickerGuidance() {
@@ -1765,6 +1790,96 @@
         return { element: null, blockedCrossOrigin };
     }
 
+    function removeFrameShields(delayMs) {
+        const remove = () => {
+            for (const shield of document.querySelectorAll('.h2m-frame-shield')) {
+                try { shield.remove(); } catch (_) {}
+            }
+            frameShields = [];
+            if (frameShieldRaf) {
+                cancelAnimationFrame(frameShieldRaf);
+                frameShieldRaf = null;
+            }
+        };
+        if (delayMs) setTimeout(remove, delayMs);
+        else remove();
+    }
+
+    function positionFrameShield(entry) {
+        const { frame, shield } = entry;
+        if (!frame || !frame.isConnected || !isElementVisible(frame)) {
+            shield.style.display = 'none';
+            return;
+        }
+        let rect;
+        try { rect = frame.getBoundingClientRect(); } catch (_) { rect = null; }
+        if (!rect) {
+            shield.style.display = 'none';
+            return;
+        }
+        shield.style.display = 'block';
+        shield.style.left = rect.left + 'px';
+        shield.style.top = rect.top + 'px';
+        shield.style.width = rect.width + 'px';
+        shield.style.height = rect.height + 'px';
+    }
+
+    function updateFrameShields() {
+        if (!selecting || !frameShields.length || frameShieldRaf) return;
+        frameShieldRaf = requestAnimationFrame(() => {
+            frameShieldRaf = null;
+            for (const entry of frameShields) positionFrameShield(entry);
+        });
+    }
+
+    function createFrameShields() {
+        removeFrameShields();
+        if (IS_EMBEDDED_DR_FRAME) return;
+        const frame = getDRIframe();
+        if (!frame || !isElementVisible(frame)) return;
+        const shield = el('div', {
+            className: 'h2m-frame-shield',
+            'data-h2m-frame-shield': 'true',
+            style: {
+                position: 'fixed',
+                zIndex: '2147483638',
+                cursor: 'crosshair',
+                pointerEvents: 'auto',
+                touchAction: 'none',
+                userSelect: 'none',
+                background: 'rgba(255,30,30,.015)',
+                outline: '3px dashed transparent',
+                outlineOffset: '-3px',
+                boxSizing: 'border-box'
+            }
+        });
+        const entry = { frame, shield };
+        shield.addEventListener('mousemove', () => {
+            shield.style.outlineColor = '#ff2d2d';
+            hl(frame);
+        });
+        shield.addEventListener('mouseleave', () => { shield.style.outlineColor = 'transparent'; });
+        let handoffStarted = false;
+        const handoff = e => {
+            stopActivationEvent(e, true);
+            if (handoffStarted) return;
+            handoffStarted = true;
+            armActivationBlock(e, shield);
+            endSel({ deferFrameShields: true });
+            try { frame.focus(); } catch (_) {}
+            sendPickerToIframe(frame);
+        };
+        shield.addEventListener('pointerdown', handoff, true);
+        shield.addEventListener('mousedown', handoff, true);
+        document.body.appendChild(shield);
+        positionFrameShield(entry);
+        frameShields.push(entry);
+    }
+
+
+    window.addEventListener('scroll', updateFrameShields, true);
+    window.addEventListener('resize', updateFrameShields, true);
+
     function showTip() {
         if (tipEl) tipEl.remove();
         tipEl = el('div', { className: 'h2m-tip' });
@@ -1774,7 +1889,7 @@
             '\u2022 Click to select and export',
             '\u2022 Arrow keys: navigate DOM tree',
             '\u2022 Scroll: Up=parent, Down=child',
-            '\u2022 Scroll down on iframe: enter iframe',
+            '\u2022 Click iframe: enter nested picker',
             '\u2022 R = full Deep Research export',
             '\u2022 G = Gemini export',
             '\u2022 Esc = cancel'
@@ -1783,20 +1898,29 @@
         document.body.appendChild(tipEl);
     }
 
-    function startSel() {
+    function startSel(session) {
         ensurePickerStyleInDoc(document);
         document.body.classList.add('h2m-no-scroll');
         selecting = true;
+        if (session) {
+            pickerSessionId = session.sessionId || pickerSessionId;
+            pickerSourceUrl = currentSourceUrl(session.sourceUrl || pickerSourceUrl);
+            pickerParentOrigin = session.origin && session.origin !== 'null' ? session.origin : '*';
+        } else if (!pickerSourceUrl) {
+            pickerSourceUrl = currentSourceUrl();
+        }
+        createFrameShields();
         showTip();
     }
 
-    function endSel() {
+    function endSel(options) {
         selecting = false;
         clearPickerHighlights();
         document.body.classList.remove('h2m-no-scroll');
         if (tipEl) { tipEl.remove(); tipEl = null; }
         selEl = null;
         if (_raf) { cancelAnimationFrame(_raf); _raf = null; }
+        removeFrameShields(options && options.deferFrameShields ? 260 : 0);
     }
 
     function hl(t) {
@@ -1814,10 +1938,50 @@
     }
 
     window.addEventListener('message', function (ev) {
-        if (!ev.data) return;
-        if (ev.data.type === 'h2m-start-picker') { if (!selecting) startSel(); }
-        if (ev.data.type === 'h2m-stop-picker') { if (selecting) endSel(); }
-        if (ev.data.type === 'h2m-auto-export') { autoExportDR(); }
+        const data = ev.data || {};
+
+        if (data.protocol === DR_PROTOCOL && data.type === DR_MESSAGES.pickerStart) {
+            if (IS_EMBEDDED_DR_FRAME && ev.source !== window.parent) return;
+            startSel({ sessionId: data.sessionId, sourceUrl: data.sourceUrl, origin: ev.origin });
+            return;
+        }
+        if (data.protocol === DR_PROTOCOL && data.type === DR_MESSAGES.pickerStop) {
+            if (IS_EMBEDDED_DR_FRAME && ev.source !== window.parent) return;
+            if (!data.sessionId || data.sessionId === pickerSessionId) endSel();
+            return;
+        }
+        if (data.protocol === DR_PROTOCOL && data.type === DR_MESSAGES.pickerResult) {
+            const frame = frameForWindow(ev.source);
+            if (!frame) return;
+            if (activePickerSessionId && data.pickerSessionId && data.pickerSessionId !== activePickerSessionId) return;
+            if (!data.pickerSessionId && frame !== getDRIframe()) return;
+            if (typeof data.markdown !== 'string' || !data.markdown.trim()) return;
+            showModal(data.markdown, data.options || { drToolbar: true });
+            postToSource(ev.source, ev.origin, {
+                protocol: DR_PROTOCOL,
+                type: DR_MESSAGES.presentAck,
+                requestId: data.requestId || ''
+            });
+            return;
+        }
+        if (data.protocol === DR_PROTOCOL && data.type === DR_MESSAGES.presentAck) {
+            if (ev.source !== window.parent) return;
+            const ack = pendingPresentAcks.get(data.requestId);
+            if (ack) {
+                pendingPresentAcks.delete(data.requestId);
+                ack();
+            }
+            return;
+        }
+
+        // Backward-compatible picker handoff only. Legacy auto-export broadcasts
+        // are intentionally unsupported because they created duplicate modals.
+        if (data.type === 'h2m-start-picker' && (!IS_EMBEDDED_DR_FRAME || ev.source === window.parent)) {
+            if (!selecting) startSel({ sourceUrl: document.referrer, origin: ev.origin });
+        }
+        if (data.type === 'h2m-stop-picker' && (!IS_EMBEDDED_DR_FRAME || ev.source === window.parent)) {
+            if (selecting) endSel();
+        }
     });
 
     document.addEventListener('mousemove', function (e) {
@@ -1840,31 +2004,34 @@
     }, true);
 
     function sendPickerToIframe(iframe) {
-        let posted = false;
-        const tryPost = () => {
-            try {
-                if (iframe && iframe.contentWindow) {
-                    iframe.contentWindow.postMessage({ type: 'h2m-start-picker' }, '*');
-                    posted = true;
-                }
-            } catch (_) {}
+        if (!iframe || !iframe.contentWindow) {
+            toast('Unable to activate the iframe picker.', 4000);
+            return false;
+        }
+        activePickerFrame = iframe;
+        activePickerSessionId = makeRequestId('picker');
+        const message = {
+            protocol: DR_PROTOCOL,
+            type: DR_MESSAGES.pickerStart,
+            sessionId: activePickerSessionId,
+            sourceUrl: location.href
         };
-        tryPost();
-        setTimeout(tryPost, 220);
-        setTimeout(tryPost, 700);
-        setTimeout(tryPost, 1400);
+        const send = () => postToFrame(iframe, message);
+        const posted = send();
+        setTimeout(send, 180);
+        setTimeout(send, 550);
+        setTimeout(send, 1200);
 
         if (!posted) {
-            toast('Unable to send picker to this iframe. Press R for full Deep Research export.', 5000);
-            return;
+            toast('Unable to send the picker to this iframe. Press R for full Deep Research export.', 5000);
+            return false;
         }
-
-        if (isCrossOriginIframe(iframe)) {
-            toast('Origin-isolated iframe detected. Attempted iframe handoff; if no highlight appears, press R for full Deep Research export.', 6500);
-        } else {
-            toast('Picker activated inside iframe. Click into the iframe to select elements.', 3000);
-        }
+        toast(isCrossOriginIframe(iframe)
+            ? 'Picker activated inside the Deep Research panel. Click the report element to export.'
+            : 'Picker activated inside iframe. Click the element to export.', 4200);
+        return true;
     }
+
 
     document.addEventListener('wheel', function (e) {
         if (!selecting) return;
@@ -1891,13 +2058,18 @@
             e.preventDefault();
             if (typeof e.stopPropagation === 'function') e.stopPropagation();
             if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
-            try { window.parent.postMessage({ type: 'h2m-stop-picker' }, '*'); } catch (_) {}
+            if (activePickerFrame && activePickerSessionId) {
+                postToFrame(activePickerFrame, { protocol: DR_PROTOCOL, type: DR_MESSAGES.pickerStop, sessionId: activePickerSessionId });
+            }
+            if (IS_EMBEDDED_DR_FRAME) {
+                postToSource(window.parent, pickerParentOrigin, { protocol: DR_PROTOCOL, type: DR_MESSAGES.pickerStop, sessionId: pickerSessionId });
+            }
             endSel();
             return;
         }
         if (e.key.toUpperCase() === 'R') {
-            e.preventDefault(); endSel();
-            if (!IS_DR_IFRAME && hasDRIframe()) sendToAllIframes({ type: 'h2m-auto-export' });
+            e.preventDefault();
+            endSel();
             autoExportDR();
             return;
         }
@@ -1905,7 +2077,7 @@
             e.preventDefault();
             endSel();
             extractGeminiMarkdown().then(g => {
-                if (g) showModal(fmtOut(g, document.title), { drToolbar: true });
+                if (g) presentMarkdown(fmtOut(g, document.title, pickerSourceUrl), { drToolbar: true });
                 else toast('No Gemini content found.', 3000);
             });
             return;
@@ -1919,9 +2091,59 @@
         if (nx && nx.tagName !== 'HTML' && nx.tagName !== 'BODY') hl(nx);
     }, true);
 
-    document.addEventListener('mousedown', function (e) {
-        if (!selecting) return;
-        if (isUs(e.target)) return;
+    function stopActivationEvent(e, preventDefault) {
+        if (!e) return;
+        if (preventDefault !== false && e.cancelable) e.preventDefault();
+        if (typeof e.stopPropagation === 'function') e.stopPropagation();
+        if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+    }
+
+    function armActivationBlock(e, target) {
+        activationBlock = {
+            until: performance.now() + 1600,
+            target: target || e.target,
+            button: typeof e.button === 'number' ? e.button : 0,
+            x: Number.isFinite(e.clientX) ? e.clientX : null,
+            y: Number.isFinite(e.clientY) ? e.clientY : null
+        };
+    }
+
+    function matchesActivationBlock(e) {
+        if (!activationBlock) return false;
+        if (performance.now() > activationBlock.until) {
+            activationBlock = null;
+            return false;
+        }
+        if (typeof e.button === 'number' && e.button !== activationBlock.button) return false;
+        const sameTarget = e.target === activationBlock.target
+            || (activationBlock.target && activationBlock.target.contains && activationBlock.target.contains(e.target))
+            || (e.target && e.target.contains && e.target.contains(activationBlock.target));
+        const nearPoint = activationBlock.x == null || activationBlock.y == null
+            || (Math.abs(e.clientX - activationBlock.x) <= 8 && Math.abs(e.clientY - activationBlock.y) <= 8);
+        return sameTarget || nearPoint;
+    }
+
+    function exportSelectedElement(clickedEl) {
+        const ownerDoc = clickedEl.ownerDocument || document;
+        cit.reset();
+        const md2 = h2m(clickedEl, gP().cs, fiberCites(ownerDoc));
+        if (!md2.trim()) {
+            toast('The selected control has no exportable text. Select its surrounding content element.', 3800);
+            return;
+        }
+        const drToolbar = IS_CHATGPT || IS_GEMINI || IS_DR_SANDBOX_HOST || hasDROverlay() || hasDRIframe();
+        presentMarkdown(fmtOut(md2, ownerDoc.title || document.title, pickerSourceUrl), { drToolbar });
+    }
+
+    function handleSelectionPress(e) {
+        if (!selecting || isUs(e.target)) return;
+        if (e.type === 'mousedown' && performance.now() - lastPointerSelectionAt < 120) {
+            stopActivationEvent(e, true);
+            return;
+        }
+        if (e.type === 'pointerdown') lastPointerSelectionAt = performance.now();
+
+        stopActivationEvent(e, true);
         if (tipEl) tipEl.style.display = 'none';
         const picked = pickTargetAtPoint(document, e.clientX, e.clientY, 0);
         if (tipEl) tipEl.style.display = '';
@@ -1930,44 +2152,43 @@
         if (!selEl) return;
 
         const clickedEl = selEl;
-        const iframeClick = clickedEl.tagName === 'IFRAME';
-        if (!iframeClick) {
-            e.preventDefault();
-            e.stopImmediatePropagation();
-        }
+        armActivationBlock(e, clickedEl);
         endSel();
 
-        if (clickedEl.tagName === 'IFRAME' && isDRElement(clickedEl)) {
-            try { clickedEl.focus(); } catch (_) {}
-            sendPickerToIframe(clickedEl);
-            toast('Picker handoff sent to Deep Research iframe. Click inside the report area and select a subelement.', 5000);
-        } else if (clickedEl.tagName === 'IFRAME') {
-            sendPickerToIframe(clickedEl);
-        } else if (IS_CHATGPT && !IS_DR_IFRAME && isDRElement(clickedEl)) {
-            autoExportDR();
-        } else {
-            const ownerDoc = clickedEl.ownerDocument || document;
-            cit.reset();
-            const md2 = h2m(clickedEl, gP().cs, fiberCites(ownerDoc));
-            const drToolbar = IS_CHATGPT || IS_GEMINI || IS_DR_IFRAME || hasDROverlay() || hasDRIframe();
-            showModal(fmtOut(md2, ownerDoc.title || document.title), { drToolbar });
-        }
-    }, true);
+        queueMicrotask(() => {
+            if (clickedEl.tagName === 'IFRAME') {
+                try { clickedEl.focus(); } catch (_) {}
+                sendPickerToIframe(clickedEl);
+                return;
+            }
+            // A Deep Research subelement is still a normal selectable element.
+            // Full-report export is explicitly reserved for the R shortcut/menu.
+            exportSelectedElement(clickedEl);
+        });
+    }
 
-    document.addEventListener('click', function (e) { if (selecting) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
-    document.addEventListener('mouseup', function (e) { if (selecting) { e.stopImmediatePropagation(); } }, true);
+    document.addEventListener('pointerdown', handleSelectionPress, true);
+    document.addEventListener('mousedown', handleSelectionPress, true);
+
+    for (const type of ['pointerup', 'mouseup', 'click', 'auxclick', 'dblclick', 'contextmenu']) {
+        document.addEventListener(type, function (e) {
+            if (!selecting && !matchesActivationBlock(e)) return;
+            stopActivationEvent(e, true);
+            if (type === 'click' || type === 'auxclick' || type === 'contextmenu') {
+                setTimeout(() => { activationBlock = null; }, 0);
+            }
+        }, true);
+    }
+
 
     // =====================================================================
     // MENU COMMANDS
     // =====================================================================
-    _menu('Convert to Markdown', () => { if (selecting) endSel(); else startSel(); });
-    _menu('GitHub Configuration', () => showGHCfg());
-    _menu('Obsidian Configuration', () => showObsidianCfg());
-    if (IS_CHATGPT || IS_GEMINI || IS_DR_IFRAME) _menu('Export Deep Research', () => autoExportDR());
-
-    // =====================================================================
-    // URL CHANGE DETECTION
-    // =====================================================================
-    if (IS_CHATGPT || IS_GEMINI) { let lu = location.href; setInterval(() => { if (location.href !== lu) lu = location.href; }, 1000); }
+    if (IS_TOP_CONTEXT) {
+        _menu('Convert to Markdown', () => { if (selecting) endSel(); else startSel(); });
+        _menu('GitHub Configuration', () => showGHCfg());
+        _menu('Obsidian Configuration', () => showObsidianCfg());
+        if (IS_CHATGPT || IS_GEMINI || IS_TOP_LEVEL_DR_PAGE) _menu('Export Deep Research', () => autoExportDR());
+    }
 
 })();

@@ -1,14 +1,39 @@
 ---
-title: "Greasy Fork Universal Markdown Exporter Changelog and Version History: V1.0.0–4.2.0"
-date: 2026-04-22
+title: "Greasy Fork Universal Markdown Exporter Changelog and Version History: V1.0.0–4.3.0"
+date: 2026-08-03
 source: https://greasyfork.org/en/scripts/568581-universal-markdown-exporter/versions?show_all_versions=1
 ---
 
-# Greasy Fork Universal Markdown Exporter Changelog and Version History: V1.0.0–4.2.1 \[Retrieved April 22, 2026\]
+# Universal Markdown Exporter Changelog and Version History: V1.0.0–4.3.0
 
 Converts most web page elements into clean Markdown with visual element selection and live editor preview support. This Trusted-Types safe script supports extraction and conversion from ChatGPT deep research overlays with sub-element selection inside the maximized panel, including citation/sources/thinking-activity extraction, and Google Gemini deep research reports and canvases, featuring 6 citation styles, YAML frontmatter integration, and exporting to clipboard/file/GitHub/Obsidian.
 
-These are all versions of this script. Each major update includes a description answering the question: what's changed in this version relative to its immediate predecessor?
+Version history through the local/GitHub 4.3.0 candidate dated August 3, 2026. Greasy Fork remains on the previously published release until the 4.3.0 source is uploaded there. Each major update describes what changed relative to its immediate predecessor.
+
+## Version 4.3.0
+
+| # | Change | Why |
+| --- | --- | --- |
+| 1 | Replaced all-frame `h2m-auto-export` broadcasts with a versioned, request-correlated Deep Research bridge | The parent and embedded report previously executed full export independently, producing two stacked export dialogs |
+| 2 | Bound every bridge response to the selected iframe `contentWindow` and a unique `requestId` | A response from a stale or hidden report iframe could otherwise win the race and export the wrong conversation/report |
+| 3 | Added visible-area scoring for Deep Research iframe selection | The exporter now prefers the active visible report instead of the first matching iframe in DOM order |
+| 4 | Added a single-flight export job, per-document runtime guard, and one export-modal identity | Repeated triggers or duplicate userscript initialization can no longer create concurrent export workflows in one document |
+| 5 | Added durable pointer/mouse/click suppression after element selection | Ending selection on `mousedown` previously released the subsequent `click`, allowing ChatGPT links and React routes to navigate to another thread |
+| 6 | Added an active-frame picker shield and parent-owned picker-result handoff | The parent can reliably enter a cross-origin Deep Research iframe, while the child exports the selected nested element back to exactly one parent modal |
+| 7 | Deep Research subelements now use ordinary element conversion; `R`/the menu is reserved for full-report export | Clicking a heading, paragraph, citation, or side-panel item no longer unexpectedly triggers the entire report export |
+| 8 | Narrowed automatic right-panel opening to the explicit `Sources and activity` control | The prior icon-only fallback could click unrelated ChatGPT toolbar controls |
+| 9 | Forwarded the current parent conversation URL through bridge and picker requests | YAML frontmatter no longer depends solely on an iframe referrer that may be stale or unavailable |
+| 10 | Removed shadowed legacy extractor declarations and the no-op URL polling interval | Eliminates dead code, duplicate function declarations, and unnecessary recurring work |
+| 11 | Corrected GitHub userscript update metadata from Greasy Fork script `530139` to this project’s script `568581` | Repository installs and update checks must target Universal Markdown Exporter rather than its upstream ancestor |
+| 12 | Added dependency-free static validation, a synthetic Chromium regression suite, DOM-fixture inventory tooling, and GitHub Actions coverage | The navigation, duplicate-modal, stale-frame, nested-picker, and runtime-singleton regressions are now reproducible |
+
+### Verified regressions
+
+- Selecting an anchor leaves the page URL unchanged and opens one Markdown modal.
+- Full export with hidden/stale and visible/current report frames exports only the visible report.
+- Parent full export creates one modal in total; the embedded frame remains data-only.
+- Nested iframe selection returns only the selected element to the parent modal.
+- Re-injecting the userscript in the same document is a no-op.
 
 ## Version 4.2.1
 
